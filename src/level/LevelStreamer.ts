@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { Config } from '@/config/GameConfig';
 import { ObjectPool } from '@/core/ObjectPool';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
-import { WallEntity } from '@/entities/WallEntity';
+import { RailEntity } from '@/entities/RailEntity';
+import { BumperEntity } from '@/entities/BumperEntity';
 import { DotEntity } from '@/entities/DotEntity';
 import { PowerUpEntity } from '@/entities/PowerUpEntity';
 import { FlipperPair } from '@/entities/FlipperPair';
@@ -10,23 +11,24 @@ import { generateChunk, type ChunkSpec } from './ChunkGenerator';
 
 interface ActiveChunk {
   spec: ChunkSpec;
-  walls: WallEntity[];
+  rails: RailEntity[];
+  bumpers: BumperEntity[];
   dots: DotEntity[];
   powerups: PowerUpEntity[];
   flippers: FlipperPair[];
 }
 
 /**
- * Streams the infinite vertical table in and out of a fixed pool of entities.
+ * Streams the infinite vertical canyon in and out of a fixed pool of entities.
  *
- * As the camera climbs, chunks ahead are instantiated from {@link generateChunk}
- * specs by borrowing pooled walls/dots/power-ups/flippers; chunks that fall far
- * below the camera are recycled. The total live entity count — and therefore
- * the memory footprint — stays flat, so the GC never stutters mid-run
- * (blueprint §HTML5 Optimization).
+ * As the camera climbs, boards ahead are instantiated from {@link generateChunk}
+ * specs by borrowing pooled rails / bumpers / dots / power-ups / flippers;
+ * boards that fall far below are recycled. The live entity count — and thus the
+ * memory footprint — stays flat, so the GC never stutters mid-run.
  */
 export class LevelStreamer {
-  private readonly wallPool: ObjectPool<WallEntity>;
+  private readonly railPool: ObjectPool<RailEntity>;
+  private readonly bumperPool: ObjectPool<BumperEntity>;
   private readonly dotPool: ObjectPool<DotEntity>;
   private readonly powerupPool: ObjectPool<PowerUpEntity>;
   private readonly flipperPairs: FlipperPair[] = [];
@@ -36,11 +38,13 @@ export class LevelStreamer {
   /** Live sensors, exposed for overlap checks by the gameplay layer. */
   readonly activeDots = new Set<DotEntity>();
   readonly activePowerups = new Set<PowerUpEntity>();
+  private readonly activeBumpers = new Set<BumperEntity>();
 
   private readonly chunkHeight = Config.level.chunkHeight;
 
-  constructor(scene: THREE.Scene, world: PhysicsWorld) {
-    this.wallPool = new ObjectPool(() => new WallEntity(scene, world), Config.pools.walls);
+  constructor(scene: THREE.Object3D, world: PhysicsWorld) {
+    this.railPool = new ObjectPool(() => new RailEntity(scene, world), Config.pools.rails);
+    this.bumperPool = new ObjectPool(() => new BumperEntity(scene, world), Config.pools.bumpers);
     this.dotPool = new ObjectPool(() => new DotEntity(scene), Config.pools.dots);
     this.powerupPool = new ObjectPool(() => new PowerUpEntity(scene), Config.pools.powerups);
 
@@ -63,6 +67,7 @@ export class LevelStreamer {
     this.active.clear();
     this.activeDots.clear();
     this.activePowerups.clear();
+    this.activeBumpers.clear();
     this.update(startY, true);
   }
 
@@ -71,15 +76,12 @@ export class LevelStreamer {
     const high = Math.floor(cameraY / this.chunkHeight) + Config.level.spawnAheadChunks;
     const low = Math.max(0, Math.floor((cameraY - Config.level.recycleBehind) / this.chunkHeight));
 
-    // Recycle chunks that scrolled out below.
     for (const idx of [...this.active.keys()]) {
       if (idx < low || idx > high + 1) this.recycleChunk(idx);
     }
 
-    // Instantiate missing chunks. When forced (reset/warp) build the whole
-    // range at once; otherwise spread work out — one new chunk per frame is
-    // plenty given the spawn-ahead headroom — and only break *after* actually
-    // creating one, so climbing keeps generating ground ahead.
+    // Spread generation across frames unless forced; break only after actually
+    // creating a board so climbing keeps generating ground ahead.
     for (let idx = low; idx <= high; idx++) {
       if (this.active.has(idx)) continue;
       this.instantiateChunk(idx);
@@ -89,13 +91,20 @@ export class LevelStreamer {
 
   private instantiateChunk(index: number): void {
     const spec = generateChunk(index);
-    const chunk: ActiveChunk = { spec, walls: [], dots: [], powerups: [], flippers: [] };
+    const chunk: ActiveChunk = { spec, rails: [], bumpers: [], dots: [], powerups: [], flippers: [] };
 
-    for (const w of spec.walls) {
-      const wall = this.wallPool.acquire();
-      if (!wall) break;
-      wall.configure(w.ax, w.ay, w.bx, w.by, w.kind, spec.biome.accent);
-      chunk.walls.push(wall);
+    for (const r of spec.rails) {
+      const rail = this.railPool.acquire();
+      if (!rail) break;
+      rail.configure(r.points, r.kind, spec.biome.accent);
+      chunk.rails.push(rail);
+    }
+    for (const b of spec.bumpers) {
+      const bumper = this.bumperPool.acquire();
+      if (!bumper) break;
+      bumper.configure(b.x, b.y, spec.biome.accentB);
+      this.activeBumpers.add(bumper);
+      chunk.bumpers.push(bumper);
     }
     for (const d of spec.dots) {
       const dot = this.dotPool.acquire();
@@ -124,7 +133,11 @@ export class LevelStreamer {
   private recycleChunk(index: number): void {
     const chunk = this.active.get(index);
     if (!chunk) return;
-    for (const w of chunk.walls) this.wallPool.release(w);
+    for (const r of chunk.rails) this.railPool.release(r);
+    for (const b of chunk.bumpers) {
+      this.activeBumpers.delete(b);
+      this.bumperPool.release(b);
+    }
     for (const d of chunk.dots) {
       this.activeDots.delete(d);
       this.dotPool.release(d);
@@ -140,9 +153,10 @@ export class LevelStreamer {
     this.active.delete(index);
   }
 
-  /** Variable-step idle animation for dots/power-ups (purely cosmetic). */
+  /** Variable-step idle animation for dots / power-ups / bumpers (cosmetic). */
   animate(dt: number): void {
     for (const dot of this.activeDots) dot.animate(dt);
     for (const orb of this.activePowerups) orb.animate(dt);
+    for (const bumper of this.activeBumpers) bumper.animate(dt);
   }
 }

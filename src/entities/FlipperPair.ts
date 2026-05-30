@@ -19,7 +19,7 @@ export class FlipperPair {
   private readonly rightVis: FlipperEntity;
   active = false;
 
-  constructor(scene: THREE.Scene, world: PhysicsWorld) {
+  constructor(scene: THREE.Object3D, world: PhysicsWorld) {
     this.left = new Flipper('left', 0, 0);
     this.right = new Flipper('right', 0, 0);
     world.addFlipper(this.left);

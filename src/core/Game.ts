@@ -23,6 +23,18 @@ const SPAWN = { x: 1.5, y: 8 };
 const PUSH_IMPULSE = 34;
 
 /**
+ * Tap-to-launch kicker. Whenever the ball settles (speed below CAPTURE_SPEED
+ * for CAPTURE_DELAY seconds) the launcher arms and the next tap fires the ball
+ * up the canyon with a strong, reliable impulse — so a run never stalls waiting
+ * for a lucky flip. In flight, taps drive the flippers as normal. A left/right
+ * tap angles the launch toward the opposite side for a little aiming control.
+ */
+const CAPTURE_SPEED = 7; // u/s — below this the ball counts as "settling"
+const CAPTURE_DELAY = 0.3; // s of settling before the launcher arms
+const LAUNCH_SPEED = 74; // u/s upward kick — clears ~1.5 chunks against gravity
+const LAUNCH_AIM_X = 14; // lateral component, toward the side opposite the tap
+
+/**
  * The top-level orchestrator. Owns every subsystem, the fixed-timestep loop,
  * and the Menu → Playing → GameOver state machine. Subsystems communicate via
  * the EventBus; the Game only wires their lifecycles and the few cross-cutting
@@ -45,13 +57,16 @@ export class Game {
 
   /** Suspends the sim while the power-up modal is open. */
   private paused = false;
+  /** Launcher state: armed → next tap kicks the ball up the canyon. */
+  private launchArmed = false;
+  private captureTimer = 0;
   private best: number = SaveManager.getBest();
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.renderer = new Renderer(canvas);
     const startBiome = biomeForDistance(0);
-    this.ballEntity = new BallEntity(this.renderer.scene, startBiome.accent);
-    this.streamer = new LevelStreamer(this.renderer.scene, this.world);
+    this.ballEntity = new BallEntity(this.renderer.playfield, startBiome.accent);
+    this.streamer = new LevelStreamer(this.renderer.playfield, this.world);
     this.economy = new TimeEconomy(this.world, this.streamer, this.powerups);
 
     this.hud = new HUD(uiRoot);
@@ -111,6 +126,9 @@ export class Game {
   private resetRun(snapshot?: CheckpointSnapshot): void {
     const spawnY = snapshot ? snapshot.spawnY : SPAWN.y;
     this.paused = false;
+    this.launchArmed = true; // first tap launches
+    this.captureTimer = 0;
+    this.hud.setHint('Tap to launch');
     this.powerups.reset();
     this.world.timeScale = 1;
     this.world.ball.reset(SPAWN.x, spawnY);
@@ -159,7 +177,35 @@ export class Game {
     this.world.step(dt);
     this.powerups.fixedUpdate(dt);
     this.economy.fixedUpdate(dt);
+    this.updateLauncher(dt);
     if (this.economy.isOver) this.endRun();
+  }
+
+  /** Arm the launcher once the ball has settled, so the next tap relaunches it. */
+  private updateLauncher(dt: number): void {
+    if (this.launchArmed) return;
+    if (this.world.ball.velocity.lengthSq() < CAPTURE_SPEED * CAPTURE_SPEED) {
+      this.captureTimer += dt;
+      if (this.captureTimer >= CAPTURE_DELAY) {
+        this.launchArmed = true;
+        this.hud.setHint('Tap to launch');
+      }
+    } else {
+      this.captureTimer = 0;
+    }
+  }
+
+  private launch(side: 'left' | 'right'): void {
+    const ball = this.world.ball;
+    // Aim toward the side opposite the tap for a touch of directional control.
+    const aimX = side === 'left' ? LAUNCH_AIM_X : -LAUNCH_AIM_X;
+    ball.velocity.set(aimX, LAUNCH_SPEED);
+    ball.clampSpeed();
+    this.world.resetNudge();
+    this.launchArmed = false;
+    this.captureTimer = 0;
+    this.hud.setHint(null);
+    bus.emit('flipper:actuate', { side });
   }
 
   private render(alpha: number, dt: number): void {
@@ -170,6 +216,7 @@ export class Game {
     this.streamer.update(ball.position.y);
     this.renderer.cameraRig.setTarget(ball.position.y);
     this.hud.setActivePowerups(this.powerups.activeIds);
+    this.hud.update(dt);
     this.renderer.render(dt);
   }
 
@@ -177,6 +224,11 @@ export class Game {
 
   private onFlipper(side: 'left' | 'right', down: boolean): void {
     if (!this.fsm.is('playing') || this.paused) return;
+    // A tap while the launcher is armed fires the ball instead of flipping.
+    if (down && this.launchArmed) {
+      this.launch(side);
+      return;
+    }
     for (const pair of this.streamer.allFlipperPairs) pair.press(side, down);
     if (down) {
       bus.emit('flipper:actuate', { side });
@@ -219,6 +271,7 @@ export class Game {
   private applyBiome(): void {
     const biome = biomeForDistance(this.economy.distance);
     this.renderer.setBackground(biome.background);
+    this.renderer.setAccent(biome.accent);
     this.ballEntity.setColor(biome.accent);
     this.audio.setBiome(Math.floor(this.economy.distance / 1000));
   }

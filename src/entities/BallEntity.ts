@@ -7,12 +7,14 @@ import { lerp } from '@/math/MathUtils';
 
 /** Visual representation of the pinball: a glowing sphere plus a ribbon trail. */
 export class BallEntity {
+  /** Visual Z height above the floor so the ball reads as resting on it. */
+  private static readonly Z = Config.ball.radius;
   readonly group = new THREE.Group();
   readonly trail: BallTrail;
   private readonly mesh: THREE.Mesh;
   private readonly glow: THREE.Mesh;
 
-  constructor(scene: THREE.Scene, color: number) {
+  constructor(scene: THREE.Object3D, color: number) {
     this.mesh = new THREE.Mesh(
       new THREE.SphereGeometry(Config.ball.radius, 24, 24),
       neonMaterial(color, 1.4),
@@ -39,12 +41,12 @@ export class BallEntity {
   sync(ball: Ball, alpha: number): void {
     const x = lerp(ball.prevPosition.x, ball.position.x, alpha);
     const y = lerp(ball.prevPosition.y, ball.position.y, alpha);
-    this.group.position.set(x, y, 0);
+    this.group.position.set(x, y, BallEntity.Z);
     this.trail.update(x, y);
   }
 
   reset(x: number, y: number): void {
-    this.group.position.set(x, y, 0);
+    this.group.position.set(x, y, BallEntity.Z);
     this.trail.reset(x, y);
   }
 }

@@ -3,8 +3,12 @@ import { Config } from '@/config/GameConfig';
 import { Ball } from './Ball';
 import { Flipper } from './Flipper';
 import { Segment } from './Segment';
-import { sweepCircleSegment, resolveBounce, type SweepHit } from './collision';
+import { CircleCollider } from './CircleCollider';
+import { sweepCircleSegment, sweepCircleCircle, resolveBounce, type SweepHit } from './collision';
 import { bus } from '@/core/EventBus';
+
+/** Only colliders whose Y is within this band of the ball get a full sweep. */
+const BROADPHASE_Y = 34;
 
 /**
  * The fixed-step 2D physics world.
@@ -19,6 +23,7 @@ export class PhysicsWorld {
   readonly flippers: Flipper[] = [];
   /** Active static colliders. The level streamer owns the backing pool. */
   readonly segments = new Set<Segment>();
+  readonly bumpers = new Set<CircleCollider>();
   /** Optional time-scale (Slow Motion power-up scales the whole sim). */
   timeScale = 1;
   /** When false (Time Freeze / Motion Link gate), gravity & motion still run
@@ -44,6 +49,14 @@ export class PhysicsWorld {
 
   clearSegments(): void {
     this.segments.clear();
+  }
+
+  addBumper(b: CircleCollider): void {
+    this.bumpers.add(b);
+  }
+
+  removeBumper(b: CircleCollider): void {
+    this.bumpers.delete(b);
   }
 
   step(dt: number): void {
@@ -123,14 +136,33 @@ export class PhysicsWorld {
       | (SweepHit & { restitution: number; friction: number; surfaceVel: Vec2; tipBoost: number })
       | null = null;
 
+    const by = p.y;
     for (const seg of this.segments) {
       if (!seg.active) continue;
+      // Cheap broadphase: skip colliders far from the ball's Y band.
+      if (Math.min(seg.a.y, seg.b.y) > by + BROADPHASE_Y) continue;
+      if (Math.max(seg.a.y, seg.b.y) < by - BROADPHASE_Y) continue;
       const hit = sweepCircleSegment(p, r, motion, seg.a, seg.b, seg.radius);
       if (hit && (!best || hit.t < best.t)) {
         best = {
           ...hit,
           restitution: seg.restitution,
           friction: seg.friction,
+          surfaceVel: Vec2.zero(),
+          tipBoost: 0,
+        };
+      }
+    }
+
+    for (const bumper of this.bumpers) {
+      if (!bumper.active) continue;
+      if (Math.abs(bumper.center.y - by) > BROADPHASE_Y) continue;
+      const hit = sweepCircleCircle(p, r, motion, bumper.center, bumper.radius);
+      if (hit && (!best || hit.t < best.t)) {
+        best = {
+          ...hit,
+          restitution: bumper.restitution,
+          friction: bumper.friction,
           surfaceVel: Vec2.zero(),
           tipBoost: 0,
         };

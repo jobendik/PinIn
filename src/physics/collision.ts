@@ -132,6 +132,41 @@ export function sweepCircleSegment(
 }
 
 /**
+ * Sweep a circle of radius `ballR` from `p` along `d` against a static circle
+ * (centre `c`, radius `circR`) — used for pop bumpers. Returns the earliest
+ * contact, resolving the already-overlapping case at t = 0.
+ */
+export function sweepCircleCircle(
+  p: Vec2,
+  ballR: number,
+  d: Vec2,
+  c: Vec2,
+  circR: number,
+): SweepHit | null {
+  const R = ballR + circR;
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  const startDistSq = dx * dx + dy * dy;
+
+  if (startDistSq < R * R - 1e-4) {
+    const dist = Math.sqrt(startDistSq) || 1e-6;
+    const normal = new Vec2(dx / dist, dy / dist);
+    return { t: 0, normal, point: new Vec2(c.x + normal.x * circR, c.y + normal.y * circR) };
+  }
+
+  const t = rayCircleToi(p, d, c, R);
+  if (t < 0 || t > 1) return null;
+  const hx = p.x + d.x * t;
+  const hy = p.y + d.y * t;
+  let nx = hx - c.x;
+  let ny = hy - c.y;
+  const len = Math.hypot(nx, ny) || 1e-6;
+  nx /= len;
+  ny /= len;
+  return { t, normal: new Vec2(nx, ny), point: new Vec2(c.x + nx * circR, c.y + ny * circR) };
+}
+
+/**
  * Reflect an incoming velocity about a contact normal with restitution and
  * tangential friction. `surfaceVel` is the velocity of the contact point on a
  * moving collider (e.g. a flipper face) — supplying it lets a swinging flipper

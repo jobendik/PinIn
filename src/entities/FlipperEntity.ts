@@ -11,7 +11,10 @@ import { neonMaterial } from '@/rendering/materials';
 export class FlipperEntity {
   readonly mesh: THREE.Mesh;
 
-  constructor(scene: THREE.Scene, private readonly flipper: Flipper, color: number) {
+  /** Visual Z height above the floor so the flipper reads as a raised bat. */
+  private static readonly Z = 0.8;
+
+  constructor(scene: THREE.Object3D, private readonly flipper: Flipper, color: number) {
     const len = Config.flipper.length;
     const w = Config.flipper.width;
     const geo = new THREE.CapsuleGeometry(w * 0.5, len, 4, 8);
@@ -19,7 +22,7 @@ export class FlipperEntity {
     geo.rotateZ(-Math.PI / 2);
     geo.translate(len * 0.5, 0, 0);
     this.mesh = new THREE.Mesh(geo, neonMaterial(color, 1.5));
-    this.mesh.position.set(flipper.pivot.x, flipper.pivot.y, 0);
+    this.mesh.position.set(flipper.pivot.x, flipper.pivot.y, FlipperEntity.Z);
     scene.add(this.mesh);
   }
 
@@ -28,7 +31,7 @@ export class FlipperEntity {
   }
 
   sync(): void {
-    this.mesh.position.set(this.flipper.pivot.x, this.flipper.pivot.y, 0);
+    this.mesh.position.set(this.flipper.pivot.x, this.flipper.pivot.y, FlipperEntity.Z);
     this.mesh.rotation.z = this.flipper.angle;
   }
 }

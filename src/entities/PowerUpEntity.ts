@@ -42,7 +42,7 @@ export class PowerUpEntity implements Poolable {
   private readonly glow: THREE.Mesh;
   private spin = 0;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Object3D) {
     this.group = new THREE.Group();
     this.star = new THREE.Mesh(STAR_GEO, neonMaterial(0xff2d95, 1.6));
     this.glow = new THREE.Mesh(GLOW_GEO, glowMaterial(0xff2d95, 0.2));
@@ -53,7 +53,7 @@ export class PowerUpEntity implements Poolable {
 
   configure(x: number, y: number, color: number): void {
     this.position.set(x, y);
-    this.group.position.set(x, y, 0);
+    this.group.position.set(x, y, 1.3); // float above the floor
     this.star.material = neonMaterial(color, 1.6);
     (this.glow.material as THREE.MeshBasicMaterial).color.setHex(color);
     this.collected = false;

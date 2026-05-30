@@ -7,6 +7,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { Config } from '@/config/GameConfig';
 import { CameraRig } from './CameraRig';
 import { createMistPass } from './MistPass';
+import { GridFloor } from './GridFloor';
 
 /**
  * Owns the WebGL renderer, scene, and the multi-pass post-processing stack that
@@ -21,11 +22,18 @@ import { createMistPass } from './MistPass';
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
+  /**
+   * All gameplay meshes live in this group, which is reclined about X so the
+   * flat 2D playfield is presented as a steep 3D canyon (see {@link CameraRig}).
+   * Entities add their meshes here, never to the scene directly.
+   */
+  readonly playfield = new THREE.Group();
   readonly cameraRig: CameraRig;
   readonly composer: EffectComposer;
   private readonly bloomPass: UnrealBloomPass;
   private readonly mistPass: ShaderPass;
   private readonly fog: THREE.FogExp2;
+  private readonly gridFloor = new GridFloor();
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -39,13 +47,18 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = Config.bloom.exposure;
 
-    this.fog = new THREE.FogExp2(0x05010f, 0.012);
+    this.fog = new THREE.FogExp2(0x05010f, 0.018);
     this.scene.fog = this.fog;
 
+    // Recline the whole gameplay plane into a steep canyon, then add it + floor.
+    this.playfield.rotation.x = -Config.camera.tilt;
+    this.playfield.add(this.gridFloor.mesh);
+    this.scene.add(this.playfield);
+
     // Subtle ambient + a key light so MeshStandardMaterial walls read as 3D.
-    this.scene.add(new THREE.AmbientLight(0x223044, 0.6));
-    const key = new THREE.PointLight(0xffffff, 0.8, 0, 1.2);
-    key.position.set(0, 0, 30);
+    this.scene.add(new THREE.AmbientLight(0x2a3a52, 0.7));
+    const key = new THREE.DirectionalLight(0x9fc8ff, 0.5);
+    key.position.set(0.2, 1, 0.6);
     this.scene.add(key);
 
     this.cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
@@ -75,8 +88,14 @@ export class Renderer {
     this.renderer.setClearColor(color, 1);
   }
 
+  /** Tint the grid floor to the active biome accent. */
+  setAccent(color: number): void {
+    this.gridFloor.setAccent(color);
+  }
+
   render(dt: number): void {
     this.cameraRig.update(dt);
+    this.gridFloor.follow(this.cameraRig.follow);
     this.composer.render();
   }
 

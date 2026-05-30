@@ -1,19 +1,27 @@
 import { Config } from '@/config/GameConfig';
 import { Biome, biomeForDistance, isOvertime } from '@/config/Biomes';
 import { createRng, randRange, randInt } from '@/math/MathUtils';
+import type { RailKind, RailPoint } from '@/entities/RailEntity';
 
 /**
- * Declarative descriptions of a single vertical chunk of table. The generator
- * produces these from a seeded RNG; the {@link LevelStreamer} then instantiates
- * pooled entities from the spec. Keeping generation data-only makes the layout
- * deterministic (same chunk index → same layout) and trivially testable.
+ * Declarative description of one vertical board of table. The generator emits
+ * these from a seeded RNG (deterministic per index); the {@link LevelStreamer}
+ * instantiates pooled entities from them.
+ *
+ * Layout per board, matching PinOut's structure (pinout.md / reference shots):
+ * continuous winding side RAILS form a neon canyon that bends and pinches; at
+ * each board base, curved FUNNEL rails sweep inward to a short flipper "V" with
+ * open inlanes either side; POP BUMPERS deck the mid-board; and time DOTS line
+ * the rails and a central arc. The wide upper channel lets a climbing ball pass
+ * the flippers; a missed ball funnels back down onto them.
  */
-export interface WallSpec {
-  ax: number;
-  ay: number;
-  bx: number;
-  by: number;
-  kind: 'wall' | 'ramp' | 'bumper';
+export interface RailSpec {
+  points: RailPoint[];
+  kind: RailKind;
+}
+export interface BumperSpec {
+  x: number;
+  y: number;
 }
 export interface DotSpec {
   x: number;
@@ -33,11 +41,11 @@ export interface ChunkSpec {
   baseY: number;
   topY: number;
   biome: Biome;
-  walls: WallSpec[];
+  rails: RailSpec[];
+  bumpers: BumperSpec[];
   dots: DotSpec[];
   powerups: PowerUpSpec[];
   flippers: FlipperSpec[];
-  /** World-Y of a checkpoint boundary contained in this chunk, if any. */
   checkpointY: number | null;
 }
 
@@ -46,13 +54,16 @@ const HALF = Config.level.laneWidth * 0.5;
 const SEED = 0x9e3779b1;
 
 /**
- * Generate the table layout for chunk `index`.
- *
- * Layout per chunk (bottom-to-top): a catcher flipper "V" near the base with
- * slingshot guides funnelling toward it, undulating side walls, interior
- * kicker ramps that carry dots, and an optional power-up tucked into a corner.
- * In Overtime, dots and power-ups are suppressed (blueprint §Progression).
+ * Continuous canyon edge — a smooth function of *absolute* Y so adjacent boards'
+ * rails meet seamlessly. The whole channel bends left/right and pinches in/out.
  */
+function edgeX(y: number, sign: number): number {
+  // Gentle bend + slight pinch — a wide, flowing channel, never a tight gate.
+  const bend = Math.sin(y * 0.009) * 3.4;
+  const pinch = Math.sin(y * 0.02 + 1.3) * 1.0;
+  return bend + sign * (HALF - 0.4 - pinch);
+}
+
 export function generateChunk(index: number): ChunkSpec {
   const baseY = index * H;
   const topY = baseY + H;
@@ -60,110 +71,79 @@ export function generateChunk(index: number): ChunkSpec {
   const overtime = isOvertime(baseY);
   const rng = createRng(SEED ^ (index * 0x85ebca6b));
 
-  const tightness = biome.difficulty.tightness;
-  const half = HALF * (1 - 0.28 * tightness);
-
-  const walls: WallSpec[] = [];
+  const rails: RailSpec[] = [];
+  const bumpers: BumperSpec[] = [];
   const dots: DotSpec[] = [];
   const powerups: PowerUpSpec[] = [];
   const flippers: FlipperSpec[] = [];
 
-  // ---- Undulating side walls (built from short segments for smooth curves). ----
-  const segments = 8;
-  const phase = index * 1.3;
-  const wallX = (y: number, sign: number): number => {
-    const wobble = Math.sin(y * 0.045 + phase) * (1.4 + tightness * 1.6);
-    const drift = Math.sin(y * 0.013 + phase * 0.5) * 2.0 * (1 - tightness);
-    return sign * half + sign * wobble + drift;
-  };
-  for (let s = 0; s < segments; s++) {
-    const y0 = baseY + (s / segments) * H;
-    const y1 = baseY + ((s + 1) / segments) * H;
-    walls.push({ ax: wallX(y0, -1), ay: y0, bx: wallX(y1, -1), by: y1, kind: 'wall' });
-    walls.push({ ax: wallX(y0, 1), ay: y0, bx: wallX(y1, 1), by: y1, kind: 'wall' });
+  // ---- Continuous winding side rails (the canyon walls). ----
+  const samples = 9;
+  const leftPts: RailPoint[] = [];
+  const rightPts: RailPoint[] = [];
+  for (let s = 0; s <= samples; s++) {
+    const y = baseY + (s / samples) * H;
+    leftPts.push({ x: edgeX(y, -1), y });
+    rightPts.push({ x: edgeX(y, 1), y });
   }
+  rails.push({ points: leftPts, kind: 'rail' });
+  rails.push({ points: rightPts, kind: 'rail' });
 
-  // ---- Catcher flipper "V" near the chunk base. ----
-  // The pivot gap is tuned so the resting tips nearly meet at the centre: a ball
-  // falling down the channel is caught by the V (and can be re-launched) rather
-  // than draining straight through, while open side lanes between each pivot and
-  // the wall let a climbing ball travel upward past the flippers.
-  const flipperY = baseY + 6.5;
-  const flipperGap = HALF * 1.28;
+  // ---- Flipper "V" at the board base (open inlanes + open centre). ----
+  // No funnel walls: they choke the channel. The flippers sit low and small so
+  // the climbing ball flows up the wide-open channel past them, and a missed
+  // ball can settle back onto them to be re-launched.
+  const flipperY = baseY + 6;
+  const flipperGap = HALF * 1.1;
   flippers.push({ centerX: 0, y: flipperY, gap: flipperGap });
 
-  // Slingshot guide bumpers just outside each pivot, angled inward, that kick a
-  // climbing ball back toward play (and keep it out of the dead outer corners).
-  const guideX = flipperGap * 0.5 + 2.2;
-  walls.push({ ax: -guideX, ay: flipperY + 11, bx: -guideX + 2.0, by: flipperY + 3.5, kind: 'bumper' });
-  walls.push({ ax: guideX, ay: flipperY + 11, bx: guideX - 2.0, by: flipperY + 3.5, kind: 'bumper' });
-
-  // The very first chunk gets a full-width floor: a final safety net beneath the
-  // launch V so the ball can never fall out the bottom of the world at y < 0.
+  // First board: a full-width floor rail so the ball can't fall out the bottom.
   if (index === 0) {
-    walls.push({ ax: -half, ay: baseY + 1.5, bx: half, by: baseY + 1.5, kind: 'ramp' });
+    rails.push({ kind: 'rail', points: [{ x: -HALF, y: baseY + 2 }, { x: HALF, y: baseY + 2 }] });
   }
 
-  // ---- Interior kicker ramps carrying dots. ----
-  const rampCount = 1 + (index % 2) + Math.round(tightness);
-  for (let r = 0; r < rampCount; r++) {
-    const ry = baseY + randRange(rng, 18, H - 8);
+  // ---- A single pop bumper, occasionally, tucked OFF the central climb line. ----
+  // Rare and to the side: an accent, not a wall. The ball flows past it.
+  if (!overtime && rng() < 0.5) {
     const side = rng() < 0.5 ? -1 : 1;
-    const innerX = randRange(rng, 1, half * 0.4);
-    const outerX = side * randRange(rng, half * 0.55, half * 0.92);
-    walls.push({
-      ax: side * innerX,
-      ay: ry,
-      bx: outerX,
-      by: ry + randRange(rng, 4, 9),
-      kind: 'ramp',
-    });
-
-    // Dots strung along the ramp face.
-    if (!overtime) {
-      const dotCount = randInt(rng, 3, 7);
-      for (let d = 0; d < dotCount; d++) {
-        const t = d / Math.max(1, dotCount - 1);
-        dots.push({
-          x: side * innerX + (outerX - side * innerX) * t,
-          y: ry + 1.4 + (randRange(rng, 4, 9) * t) * 0.25,
-        });
-      }
-      // Reward backtracking-rich ramps with a denser cluster occasionally.
-      if (rng() < 0.25) {
-        for (let d = 0; d < randInt(rng, 4, 8); d++) {
-          dots.push({ x: randRange(rng, -half * 0.7, half * 0.7), y: ry + randRange(rng, -2, 6) });
-        }
-      }
+    const bx = side * randRange(rng, HALF * 0.5, HALF * 0.72);
+    const by = baseY + randRange(rng, H * 0.45, H * 0.8);
+    bumpers.push({ x: bx, y: by });
+    for (let d = 0; d < 3; d++) {
+      const a = Math.PI * (0.25 + d * 0.25);
+      dots.push({ x: bx + Math.cos(a) * 3.0, y: by + 2.4 + Math.sin(a) * 1.4 });
     }
   }
 
-  // ---- A free-floating dot arc through the open channel. ----
+  // ---- Dots strung along the side rails (the classic "rail of dots"). ----
   if (!overtime) {
-    const arcY = baseY + H * 0.5;
-    const arcCount = randInt(rng, 4, 8);
-    for (let i = 0; i < arcCount; i++) {
-      const t = arcCount === 1 ? 0.5 : i / (arcCount - 1);
-      dots.push({
-        x: (t - 0.5) * 2 * half * 0.7,
-        y: arcY + Math.sin(t * Math.PI) * 6,
-      });
+    for (let s = 2; s <= samples - 1; s += 2) {
+      const y = baseY + (s / samples) * H;
+      const side = s % 4 === 0 ? -1 : 1;
+      const ex = edgeX(y, side);
+      dots.push({ x: ex - side * 2.4, y });
+      dots.push({ x: ex - side * 2.4, y: y + H / samples / 2 });
+    }
+    // A gentle central arc to reward the straight climb.
+    const arcY = baseY + H * 0.55;
+    const arcN = randInt(rng, 3, 5);
+    for (let i = 0; i < arcN; i++) {
+      const t = arcN === 1 ? 0.5 : i / (arcN - 1);
+      dots.push({ x: (t - 0.5) * 8, y: arcY + Math.sin(t * Math.PI) * 4 });
     }
   }
 
-  // ---- Power-up orb (chance-based, tucked into an upper corner). ----
+  // ---- Power-up orb (chance-based, tucked to one side). ----
   if (!overtime && rng() < biome.difficulty.powerupChance) {
     const side = rng() < 0.5 ? -1 : 1;
-    powerups.push({ x: side * half * 0.78, y: baseY + randRange(rng, H * 0.55, H * 0.9) });
+    const y = baseY + randRange(rng, H * 0.5, H * 0.85);
+    powerups.push({ x: edgeX(y, side) - side * 3.2, y });
   }
 
   // ---- Checkpoint boundary (every 1000 distance). ----
   let checkpointY: number | null = null;
-  const lowerK = Math.ceil(baseY / 1000);
-  const boundary = lowerK * 1000;
-  if (boundary >= baseY && boundary < topY && boundary > 0) {
-    checkpointY = boundary;
-  }
+  const boundary = Math.ceil(baseY / 1000) * 1000;
+  if (boundary >= baseY && boundary < topY && boundary > 0) checkpointY = boundary;
 
-  return { index, baseY, topY, biome, walls, dots, powerups, flippers, checkpointY };
+  return { index, baseY, topY, biome, rails, bumpers, dots, powerups, flippers, checkpointY };
 }

@@ -31,14 +31,15 @@ export const Config = {
    * effectively infinite flipper mass so the ball never deflects the stroke.
    */
   flipper: {
-    length: 7.2,
+    length: 4.8, // ~1/4 of the lane width, like a real table — short enough that
+    // the tips leave an open central gap instead of sealing the channel
     width: 1.0,
-    restitution: 0.88,
+    restitution: 0.9,
     friction: 0.9,
-    restAngleDeg: -28, // resting (down) angle relative to mount, for the LEFT flipper
-    upAngleDeg: 34, // actuated (up) angle relative to mount
+    restAngleDeg: -32, // resting (down) angle relative to mount, for the LEFT flipper
+    upAngleDeg: 38, // actuated (up) angle relative to mount
     angularSpeed: 46, // rad/s — near-instant snap (low coil ramp-up)
-    tipBoost: 34, // extra impulse imparted to the ball at the flipper tip
+    tipBoost: 30, // extra impulse imparted to the ball at the flipper tip
   },
 
   /** The temporal economy — time is the only currency (blueprint §Temporal Economy). */
@@ -57,12 +58,20 @@ export const Config = {
     impulse: 14,
   },
 
+  /**
+   * Forced-perspective camera up an INCLINED playfield (blueprint §Rendering /
+   * pinout.md). Gameplay is 2D on the X/Y plane; rendering tilts that plane back
+   * so the canyon recedes into the distance as you climb. The camera sits above
+   * the surface (along its normal) and behind the ball (down the incline),
+   * looking up-canyon — the classic PinOut 3/4 ascending view.
+   */
   camera: {
     followLambda: 4.5, // exponential damping rate for the Y follow
-    distance: 26, // pull-back along the view axis
-    height: 8, // raised above the playfield
-    lookAhead: 10, // bias the look target above the ball (forced perspective)
-    fov: 58,
+    tilt: 0.66, // radians the playfield reclines away from facing the camera
+    height: 12, // camera offset above the playfield surface (along its normal)
+    back: 17, // camera offset behind the ball, down the incline
+    lookAhead: 24, // look target distance up the incline from the ball
+    fov: 64,
   },
 
   /**
@@ -91,7 +100,8 @@ export const Config = {
   /** Object-pool capacities, pre-allocated on load to avoid GC spikes mid-run. */
   pools: {
     dots: 400,
-    walls: 240,
+    rails: 80, // curved tube rails (4-5 per active board)
+    bumpers: 48, // pop bumpers
     powerups: 24,
     particles: 256,
   },

@@ -23,7 +23,7 @@ export class DotEntity implements Poolable {
   private readonly glow: THREE.Mesh;
   private spin = 0;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Object3D) {
     this.group = new THREE.Group();
     this.core = new THREE.Mesh(DOT_GEO, neonMaterial(0xffffff, 1.7));
     this.glow = new THREE.Mesh(GLOW_GEO, glowMaterial(0xffffff, 0.16));
@@ -34,7 +34,7 @@ export class DotEntity implements Poolable {
 
   configure(x: number, y: number, color: number): void {
     this.position.set(x, y);
-    this.group.position.set(x, y, 0);
+    this.group.position.set(x, y, 1.0); // float above the floor
     this.core.material = neonMaterial(0xffffff, 1.7);
     (this.glow.material as THREE.MeshBasicMaterial).color.setHex(color);
     this.collected = false;
