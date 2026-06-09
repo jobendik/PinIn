@@ -14,6 +14,7 @@ export interface RailPoint {
 
 const MAX_POINTS = 24;
 const TUBE_Z = 1.3; // height of the glowing pipe above the floor
+const RAMP_Z = 2.25; // raised above rails so ramps read as overpasses
 const RADIAL = 7;
 
 /**
@@ -45,12 +46,12 @@ export class RailEntity implements Poolable {
     const n = Math.min(points.length, MAX_POINTS);
     if (n < 2) return;
 
-    this.tubeRadius = kind === 'wall' ? 0.5 : 0.42;
+    this.tubeRadius = kind === 'ramp' ? 0.32 : kind === 'wall' ? 0.5 : 0.42;
     const collisionR = this.tubeRadius;
     // Low bounce: rails should GUIDE the ball along/up the channel, not ricochet
     // it back down. The ball glances off and keeps its upward momentum.
-    const restitution = kind === 'ramp' ? 0.42 : 0.4;
-    const friction = 0.02;
+    const restitution = kind === 'ramp' ? 0.5 : 0.4;
+    const friction = kind === 'ramp' ? 0.01 : 0.02;
 
     // --- Collider chain along the polyline. ---
     this.activeSegments = n - 1;
@@ -70,14 +71,15 @@ export class RailEntity implements Poolable {
 
     // --- Smooth tube visual. ---
     const curvePts: THREE.Vector3[] = [];
-    for (let i = 0; i < n; i++) curvePts.push(new THREE.Vector3(points[i].x, points[i].y, TUBE_Z));
+    const z = kind === 'ramp' ? RAMP_Z : TUBE_Z;
+    for (let i = 0; i < n; i++) curvePts.push(new THREE.Vector3(points[i].x, points[i].y, z));
     const curve = new THREE.CatmullRomCurve3(curvePts, false, 'catmullrom', 0.5);
     const tubular = Math.max(8, (n - 1) * 6);
     const geo = new THREE.TubeGeometry(curve, tubular, this.tubeRadius, RADIAL, false);
 
     this.mesh.geometry.dispose();
     this.mesh.geometry = geo;
-    this.mesh.material = neonMaterial(accent, kind === 'ramp' ? 1.4 : 1.6);
+    this.mesh.material = neonMaterial(accent, kind === 'ramp' ? 2.0 : 1.6);
     this.mesh.visible = true;
   }
 
