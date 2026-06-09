@@ -5,7 +5,7 @@ import { fileURLToPath, URL } from 'node:url';
 // - `@` alias points at the src root so imports stay clean as the tree grows.
 // - `three` is split into its own chunk because it dwarfs the game code.
 export default defineConfig({
-  base: './',
+  base: '/PinIn/',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
