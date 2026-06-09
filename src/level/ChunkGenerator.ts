@@ -53,7 +53,7 @@ const H = Config.level.chunkHeight;
 const HALF = Config.level.laneWidth * 0.5;
 const SEED = 0x9e3779b1;
 const FLIPPER_Y_OFFSET = 7.5; // low in the board so missed balls roll back onto the bats
-const FLIPPER_GAP_HALF_WIDTH_MULTIPLIER = 1.52; // gap = HALF * multiplier for side pivots
+const FLIPPER_GAP_MULTIPLIER = 1.52; // full gap width = HALF * multiplier
 
 /**
  * Continuous canyon edge — a smooth function of *absolute* Y so adjacent boards'
@@ -102,7 +102,7 @@ export function generateChunk(index: number): ChunkSpec {
   // The pivots sit close to the side walls, leaving a broad centre lane for a
   // climbing ball to pass through instead of becoming trapped under the bats.
   const flipperY = baseY + FLIPPER_Y_OFFSET;
-  const flipperGap = HALF * FLIPPER_GAP_HALF_WIDTH_MULTIPLIER;
+  const flipperGap = HALF * FLIPPER_GAP_MULTIPLIER;
   flippers.push({ centerX: 0, y: flipperY, gap: flipperGap });
 
   // First board: a full-width floor rail so the ball can't fall out the bottom.
