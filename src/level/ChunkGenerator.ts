@@ -158,11 +158,21 @@ export function generateChunk(index: number): ChunkSpec {
     const clusterY = baseY + randRange(rng, H * 0.48, H * 0.68);
     const clusterX = clusterSide * randRange(rng, HALF * 0.42, HALF * 0.58);
     const bumperCount = randInt(rng, 2, 3);
-    for (let i = 0; i < bumperCount; i++) {
-      const angle = -Math.PI / 2 + (i / (bumperCount - 1)) * Math.PI;
+    const bumperOffsets =
+      bumperCount === 2
+        ? [
+            { x: -2.2, y: -2.5 },
+            { x: 2.2, y: 2.5 },
+          ]
+        : [
+            { x: -2.8, y: -2.8 },
+            { x: 0, y: 2.7 },
+            { x: 2.8, y: -0.6 },
+          ];
+    for (const offset of bumperOffsets) {
       bumpers.push({
-        x: clusterX + Math.cos(angle) * 2.8 * -clusterSide,
-        y: clusterY + Math.sin(angle) * 3.0,
+        x: clusterX + offset.x * -clusterSide,
+        y: clusterY + offset.y,
       });
     }
     rails.push({
