@@ -10,6 +10,17 @@ import { bus } from '@/core/EventBus';
 /** Only colliders whose Y is within this band of the ball get a full sweep. */
 const BROADPHASE_Y = 34;
 
+type AugmentedHit = SweepHit & {
+  restitution: number;
+  friction: number;
+  surfaceVel: Vec2;
+  tipBoost: number;
+  /** Slingshot snap impulse along the contact normal (0 for inert geometry). */
+  kick: number;
+  /** Vertical lift for a climbing ball — a powered ramp (0 for inert geometry). */
+  kickUp: number;
+};
+
 /**
  * The fixed-step 2D physics world.
  *
@@ -26,8 +37,6 @@ export class PhysicsWorld {
   readonly bumpers = new Set<CircleCollider>();
   /** Optional time-scale (Slow Motion power-up scales the whole sim). */
   timeScale = 1;
-  /** When false (Time Freeze / Motion Link gate), gravity & motion still run
-   *  but gameplay timer is handled elsewhere. Physics always simulates. */
 
   private gravity = Config.physics.gravity;
 
@@ -106,9 +115,21 @@ export class PhysicsWorld {
         resolveBounce(ball.velocity, hit.normal, hit.restitution, hit.friction, hit.surfaceVel),
       );
 
-      // A flipper tip moving into the ball gets an extra punch for snappy feel.
+      // A flipper tip swinging into the ball gets an extra punch for snappy feel.
       if (hit.tipBoost > 0) {
         ball.velocity.addScaledSelf(hit.normal, hit.tipBoost);
+      }
+      // A slingshot snaps the ball back into play along the contact normal.
+      if (hit.kick > 0) {
+        ball.velocity.addScaledSelf(hit.normal, hit.kick);
+      }
+      // A powered ramp carries a *climbing* ball up the canyon. Only assists a
+      // ball that is already rising (or barely falling), so it lifts a weak shot
+      // hugging the funnel toward the gate but never flings a draining ball. The
+      // ball's maxSpeed clamp (below) is the hard ceiling that keeps swept
+      // collision reliable, so the lift can never pump the ball into a tunnel.
+      if (hit.kickUp > 0 && ball.velocity.y > -1) {
+        ball.velocity.y += hit.kickUp;
       }
       ball.clampSpeed();
 
@@ -127,18 +148,16 @@ export class PhysicsWorld {
   }
 
   /** Find the earliest contact among segments and flippers for this motion. */
-  private firstHit(
-    p: Vec2,
-    r: number,
-    motion: Vec2,
-  ): (SweepHit & { restitution: number; friction: number; surfaceVel: Vec2; tipBoost: number }) | null {
-    let best:
-      | (SweepHit & { restitution: number; friction: number; surfaceVel: Vec2; tipBoost: number })
-      | null = null;
+  private firstHit(p: Vec2, r: number, motion: Vec2): AugmentedHit | null {
+    let best: AugmentedHit | null = null;
 
     const by = p.y;
     for (const seg of this.segments) {
       if (!seg.active) continue;
+      // One-way energy gate: a ratchet. Passable while the ball travels up the
+      // canyon (or horizontally), solid only while it is clearly falling back —
+      // so a missed shot can drop onto the flippers but never below the board.
+      if (seg.oneWayY > 0 && motion.y > -1e-4) continue;
       // Cheap broadphase: skip colliders far from the ball's Y band.
       if (Math.min(seg.a.y, seg.b.y) > by + BROADPHASE_Y) continue;
       if (Math.max(seg.a.y, seg.b.y) < by - BROADPHASE_Y) continue;
@@ -150,6 +169,8 @@ export class PhysicsWorld {
           friction: seg.friction,
           surfaceVel: Vec2.zero(),
           tipBoost: 0,
+          kick: seg.kick,
+          kickUp: seg.kickUp,
         };
       }
     }
@@ -165,6 +186,8 @@ export class PhysicsWorld {
           friction: bumper.friction,
           surfaceVel: Vec2.zero(),
           tipBoost: 0,
+          kick: 0,
+          kickUp: 0,
         };
       }
     }
@@ -182,6 +205,8 @@ export class PhysicsWorld {
           friction: flipper.friction,
           surfaceVel,
           tipBoost: swinging ? Config.flipper.tipBoost : 0,
+          kick: 0,
+          kickUp: 0,
         };
       }
     }
