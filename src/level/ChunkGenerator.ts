@@ -1,19 +1,31 @@
 import { Config } from '@/config/GameConfig';
 import { Biome, biomeForDistance, isOvertime } from '@/config/Biomes';
-import { createRng, randRange, randInt } from '@/math/MathUtils';
-import type { RailKind, RailPoint } from '@/entities/RailEntity';
+import { createRng, randRange } from '@/math/MathUtils';
+import type { RailKind, RailPoint } from '@/level/railProps';
 
 /**
  * Declarative description of one vertical board of table. The generator emits
  * these from a seeded RNG (deterministic per index); the {@link LevelStreamer}
  * instantiates pooled entities from them.
  *
- * Layout per board, matching PinOut's structure (pinout.md / reference shots):
- * continuous winding side RAILS form a neon canyon that bends and pinches; at
- * each board base, curved FUNNEL rails sweep inward to a short flipper "V" with
- * open inlanes either side; POP BUMPERS deck the mid-board; and time DOTS line
- * the rails and a central arc. The wide upper channel lets a climbing ball pass
- * the flippers; a missed ball funnels back down onto them.
+ * A board is a compact pinball SHOT-ZONE. The clean line is: flip the ball up
+ * the open centre, into a forgiving FUNNEL that necks any decent upward shot
+ * through the next board's one-way gate. Slingshots and a bumper pocket throw
+ * energy back into play; the gate ratchets your progress so a miss only ever
+ * drops you back onto your own flippers.
+ *
+ *   ┌──────────────── topY (= next board's one-way gate) ─────────────────┐
+ *   │              ╲      neck → through the gate      ╱                    │
+ *   │               ╲   left funnel    right funnel  ╱                      │
+ *   │   ◌            ╲                              ╱            ◌  bumper   │
+ *   │   dots ↑        ╲____  funnel mouth (wide) __╱               pocket   │
+ *   │   ╱sling╲          (open centre climb lane)          ╱sling╲          │
+ *   │     ╲ left flipper ╲           drain           ╱ right flipper ╱       │
+ *   │ ════════════════ ONE-WAY ENERGY GATE ════════════════ (ratchet)       │
+ *   └──────────────────────────── baseY ───────────────────────────────────┘
+ *
+ * The plunger (Game.ts) only re-serves a drained ball into play; it reaches
+ * about half a board, so clearing a board is always earned with the flippers.
  */
 export interface RailSpec {
   points: RailPoint[];
@@ -49,28 +61,15 @@ export interface ChunkSpec {
   checkpointY: number | null;
 }
 
-const H = Config.level.chunkHeight;
-const HALF = Config.level.laneWidth * 0.5;
+const H = Config.level.chunkHeight; // 44
+const HALF = Config.level.laneWidth * 0.5; // 11
 const SEED = 0x9e3779b1;
-const FLIPPER_Y_OFFSET = 7.5; // low in the board so missed balls roll back onto the bats
-const FLIPPER_GAP_MULTIPLIER = 1.52; // full gap width = HALF * multiplier
 
-/**
- * Continuous canyon edge — a smooth function of *absolute* Y so adjacent boards'
- * rails meet seamlessly. The whole channel bends left/right and pinches in/out.
- */
+/** Continuous canyon edge — smooth in *absolute* Y so boards meet seamlessly. */
 function edgeX(y: number, sign: number): number {
-  // Gentle bend + slight pinch — a wide, flowing channel, never a tight gate.
-  const bend = Math.sin(y * 0.009) * 3.4;
-  const pinch = Math.sin(y * 0.02 + 1.3) * 1.0;
+  const bend = Math.sin(y * 0.008) * 3.0;
+  const pinch = Math.sin(y * 0.018 + 1.3) * 0.9;
   return bend + sign * (HALF - 0.4 - pinch);
-}
-
-function addDotLine(dots: DotSpec[], a: RailPoint, b: RailPoint, count: number): void {
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    dots.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-  }
 }
 
 export function generateChunk(index: number): ChunkSpec {
@@ -86,8 +85,8 @@ export function generateChunk(index: number): ChunkSpec {
   const powerups: PowerUpSpec[] = [];
   const flippers: FlipperSpec[] = [];
 
-  // ---- Continuous winding side rails (the canyon walls). ----
-  const samples = 9;
+  // ---- Continuous winding side walls (lively — the ball ricochets off them). ----
+  const samples = 8;
   const leftPts: RailPoint[] = [];
   const rightPts: RailPoint[] = [];
   for (let s = 0; s <= samples; s++) {
@@ -95,126 +94,71 @@ export function generateChunk(index: number): ChunkSpec {
     leftPts.push({ x: edgeX(y, -1), y });
     rightPts.push({ x: edgeX(y, 1), y });
   }
-  rails.push({ points: leftPts, kind: 'rail' });
-  rails.push({ points: rightPts, kind: 'rail' });
+  rails.push({ points: leftPts, kind: 'wall' });
+  rails.push({ points: rightPts, kind: 'wall' });
 
-  // ---- Flipper "V" at the board base (open inlanes + open centre). ----
-  // The pivots sit close to the side walls, leaving a broad centre lane for a
-  // climbing ball to pass through instead of becoming trapped under the bats.
-  const flipperY = baseY + FLIPPER_Y_OFFSET;
-  const flipperGap = HALF * FLIPPER_GAP_MULTIPLIER;
-  flippers.push({ centerX: 0, y: flipperY, gap: flipperGap });
+  // ---- One-way energy gate across the board base (the ratchet). ----
+  const gateY = baseY + 0.5;
+  rails.push({
+    kind: 'gate',
+    points: [
+      { x: edgeX(gateY, -1), y: gateY },
+      { x: edgeX(gateY, 1), y: gateY },
+    ],
+  });
 
-  // First board: a full-width floor rail so the ball can't fall out the bottom.
-  if (index === 0) {
-    rails.push({ kind: 'rail', points: [{ x: -HALF, y: baseY + 2 }, { x: HALF, y: baseY + 2 }] });
-  }
+  // ---- Flipper "V" just above the gate, with a central drain between tips. ----
+  flippers.push({ centerX: 0, y: baseY + 5, gap: HALF * 1.05 });
 
-  // ---- Return lanes around the flippers. ----
-  // Short rails catch missed shots and aim them back at the side-mounted bats
-  // without spanning across the playable centre channel.
-  const leftInlane: RailPoint[] = [
-    { x: edgeX(baseY + 4, -1) + 1.0, y: baseY + 4 },
-    { x: -HALF * 0.82, y: flipperY + 0.5 },
-    { x: -HALF * 0.58, y: flipperY + 5.2 },
-  ];
-  const rightInlane: RailPoint[] = [
-    { x: edgeX(baseY + 4, 1) - 1.0, y: baseY + 4 },
-    { x: HALF * 0.82, y: flipperY + 0.5 },
-    { x: HALF * 0.58, y: flipperY + 5.2 },
-  ];
-  rails.push({ points: leftInlane, kind: 'rail' });
-  rails.push({ points: rightInlane, kind: 'rail' });
+  // ---- Slingshots above-outboard of each flipper (kick a ball back into play). ----
+  rails.push({ kind: 'sling', points: [{ x: -9.0, y: baseY + 5.5 }, { x: -6.4, y: baseY + 10.5 }] });
+  rails.push({ kind: 'sling', points: [{ x: 9.0, y: baseY + 5.5 }, { x: 6.4, y: baseY + 10.5 }] });
 
-  // ---- Raised sweep ramps. ----
-  // Each board gets one PinOut-style diagonal ramp and, later on, a short return
-  // ramp. They are offset from the centre line so they steer rather than block.
-  const rampSide = index % 2 === 0 ? -1 : 1;
-  const mainRamp: RailPoint[] = [
-    { x: rampSide * HALF * 0.76, y: baseY + H * 0.25 },
-    { x: rampSide * HALF * 0.42, y: baseY + H * 0.42 },
-    { x: -rampSide * HALF * 0.08, y: baseY + H * 0.58 },
-    { x: -rampSide * HALF * 0.42, y: baseY + H * 0.72 },
-  ];
-  rails.push({ points: mainRamp, kind: 'ramp' });
+  // ---- The funnel: a wide, gently-necking V that LIFTS a shot to the gate. ----
+  // Shallow slopes so an ascending ball glances along a wall (and is carried up
+  // by the ramp lift) rather than slamming its underside and bouncing back. The
+  // mouth stays wide and open low down so a freshly-served ball rises into the
+  // throat instead of pinballing around the base, then it necks to just under
+  // the next gate. Never vertical — parallel walls a ball-width apart let the
+  // swept solver resolve to the wrong side and tunnel out.
+  const neckX = 1.9;
+  const funnelMouthY = baseY + 17;
+  const funnelNeckY = baseY + H - 2; // just below the next gate
+  const midY = (funnelMouthY + funnelNeckY) * 0.5;
+  rails.push({
+    kind: 'ramp',
+    points: [
+      { x: -8.6, y: funnelMouthY },
+      { x: -4.3, y: midY },
+      { x: -neckX, y: funnelNeckY },
+    ],
+  });
+  rails.push({
+    kind: 'ramp',
+    points: [
+      { x: 8.6, y: funnelMouthY },
+      { x: 4.3, y: midY },
+      { x: neckX, y: funnelNeckY },
+    ],
+  });
+
+  // ---- Bumper pocket: off-centre, alternating side; adds chaos & dots. ----
+  const ps = index % 2 === 0 ? 1 : -1;
+  bumpers.push({ x: ps * 6.6, y: baseY + 22 });
+  bumpers.push({ x: ps * 5.0, y: baseY + 13 });
+
+  // ---- Dots: a column up the open centre (reward for the clean line). ----
   if (!overtime) {
-    addDotLine(dots, mainRamp[0], mainRamp[mainRamp.length - 1], 6);
+    for (let dy = 14; dy <= H - 4; dy += 6) {
+      dots.push({ x: 0, y: baseY + dy });
+    }
+    dots.push({ x: ps * 6.0, y: baseY + 17 }); // a tempting one by the bumpers
   }
 
-  if (biome.difficulty.tightness > 0.25) {
-    const returnRamp: RailPoint[] = [
-      { x: -rampSide * HALF * 0.72, y: baseY + H * 0.43 },
-      { x: -rampSide * HALF * 0.48, y: baseY + H * 0.54 },
-      { x: -rampSide * HALF * 0.16, y: baseY + H * 0.64 },
-    ];
-    rails.push({ points: returnRamp, kind: 'ramp' });
-  }
-
-  // ---- Pop-bumper islands. ----
-  // Bumpers now appear as small side clusters with a guard rail, making the
-  // boards read like pinball tables while preserving a clear central escape lane.
-  if (!overtime) {
-    const clusterSide = rng() < 0.5 ? -1 : 1;
-    const clusterY = baseY + randRange(rng, H * 0.74, H * 0.84);
-    const clusterX = clusterSide * randRange(rng, HALF * 0.42, HALF * 0.58);
-    const bumperCount = randInt(rng, 2, 3);
-    const bumperOffsets =
-      bumperCount === 2
-        ? [
-            { x: -2.2, y: -2.5 },
-            { x: 2.2, y: 2.5 },
-          ]
-        : [
-            { x: -2.8, y: -2.8 },
-            { x: 0, y: 2.7 },
-            { x: 2.8, y: -0.6 },
-          ];
-    for (const offset of bumperOffsets) {
-      bumpers.push({
-        x: clusterX + offset.x * -clusterSide,
-        y: clusterY + offset.y,
-      });
-    }
-    rails.push({
-      kind: 'rail',
-      points: [
-        { x: clusterX + clusterSide * 3.8, y: clusterY - 4.4 },
-        { x: clusterX + clusterSide * 5.0, y: clusterY },
-        { x: clusterX + clusterSide * 3.8, y: clusterY + 4.4 },
-      ],
-    });
-    for (let d = 0; d < 5; d++) {
-      const a = -0.9 + d * 0.45;
-      dots.push({
-        x: clusterX - clusterSide * (3.6 + Math.cos(a) * 1.4),
-        y: clusterY + Math.sin(a) * 4.0,
-      });
-    }
-  }
-
-  // ---- Dots strung along the side rails (the classic "rail of dots"). ----
-  if (!overtime) {
-    for (let s = 2; s <= samples - 1; s += 2) {
-      const y = baseY + (s / samples) * H;
-      const side = s % 4 === 0 ? -1 : 1;
-      const ex = edgeX(y, side);
-      dots.push({ x: ex - side * 2.4, y });
-      dots.push({ x: ex - side * 2.4, y: y + H / samples / 2 });
-    }
-    // A gentle central arc to reward the straight climb.
-    const arcY = baseY + H * 0.55;
-    const arcN = randInt(rng, 3, 5);
-    for (let i = 0; i < arcN; i++) {
-      const t = arcN === 1 ? 0.5 : i / (arcN - 1);
-      dots.push({ x: (t - 0.5) * 8, y: arcY + Math.sin(t * Math.PI) * 4 });
-    }
-  }
-
-  // ---- Power-up orb (chance-based, tucked to one side). ----
+  // ---- Power-up orb (chance-based, tucked into the bumper-pocket corner). ----
   if (!overtime && rng() < biome.difficulty.powerupChance) {
-    const side = rng() < 0.5 ? -1 : 1;
-    const y = baseY + randRange(rng, H * 0.5, H * 0.85);
-    powerups.push({ x: edgeX(y, side) - side * 3.2, y });
+    const y = baseY + randRange(rng, H * 0.55, H * 0.78);
+    powerups.push({ x: -ps * (HALF - 3.2), y });
   }
 
   // ---- Checkpoint boundary (every 1000 distance). ----
