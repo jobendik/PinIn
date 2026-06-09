@@ -8,21 +8,23 @@ import type { RailKind, RailPoint } from '@/level/railProps';
  * these from a seeded RNG (deterministic per index); the {@link LevelStreamer}
  * instantiates pooled entities from them.
  *
- * A board is a compact pinball SHOT-ZONE. The clean line is: flip the ball up
- * the open centre, into a forgiving FUNNEL that necks any decent upward shot
- * through the next board's one-way gate. Slingshots and a bumper pocket throw
- * energy back into play; the gate ratchets your progress so a miss only ever
- * drops you back onto your own flippers.
+ * PinOut's defining property is that every screen reads as a hand-built pinball
+ * SHOT — curved lanes you aim into, with rows of time dots strung along them
+ * like runway lights. So instead of one repeating funnel, each board is built
+ * from a shared skeleton (one-way gate → flipper V → slingshots) plus one of
+ * several ARCHETYPES that define the shot geometry of its middle:
  *
- *   ┌──────────────── topY (= next board's one-way gate) ─────────────────┐
- *   │              ╲      neck → through the gate      ╱                    │
- *   │               ╲   left funnel    right funnel  ╱                      │
- *   │   ◌            ╲                              ╱            ◌  bumper   │
- *   │   dots ↑        ╲____  funnel mouth (wide) __╱               pocket   │
- *   │   ╱sling╲          (open centre climb lane)          ╱sling╲          │
- *   │     ╲ left flipper ╲           drain           ╱ right flipper ╱       │
- *   │ ════════════════ ONE-WAY ENERGY GATE ════════════════ (ratchet)       │
- *   └──────────────────────────── baseY ───────────────────────────────────┘
+ *   twinRamps — the classic: two mirrored ramps arcing up the sides, both
+ *               strung with dots, necking into the next gate.
+ *   orbit     — one grand dotted sweep up a single side (the reward line),
+ *               with a bumper pocket and a plain deflector lane opposite.
+ *   island    — a diamond island splits the climb into two dotted lanes.
+ *   nest      — a pop-bumper triangle mid-board with straighter side guides.
+ *
+ * The whole canyon meanders: every element is placed relative to the canyon
+ * centreline `centreX(y)`, so geometry bends with the walls and never pokes
+ * through them. Dots are laid ALONG the lane polylines (inset toward play) —
+ * the signature PinOut look of dotted light-trails marking each route.
  *
  * The plunger (Game.ts) only re-serves a drained ball into play; it reaches
  * about half a board, so clearing a board is always earned with the flippers.
@@ -61,16 +63,163 @@ export interface ChunkSpec {
   checkpointY: number | null;
 }
 
-const H = Config.level.chunkHeight; // 44
+const H = Config.level.chunkHeight; // 40
 const HALF = Config.level.laneWidth * 0.5; // 11
 const SEED = 0x9e3779b1;
+/** Lane half-width at the neck, just under each gate. */
+const NECK_X = 1.9;
+/** Local Y where all guide lanes converge (just below the next gate). */
+const TOP = H - 2;
 
-/** Continuous canyon edge — smooth in *absolute* Y so boards meet seamlessly. */
-function edgeX(y: number, sign: number): number {
-  const bend = Math.sin(y * 0.008) * 3.0;
-  const pinch = Math.sin(y * 0.018 + 1.3) * 0.9;
-  return bend + sign * (HALF - 0.4 - pinch);
+/** The canyon centreline meanders slowly — smooth in *absolute* Y. */
+export function centreX(y: number): number {
+  return Math.sin(y * 0.008) * 3.0;
 }
+
+function pinch(y: number): number {
+  return Math.sin(y * 0.018 + 1.3) * 0.9;
+}
+
+/** Continuous canyon edge — boards meet seamlessly. */
+export function edgeX(y: number, sign: number): number {
+  return centreX(y) + sign * (HALF - 0.4 - pinch(y));
+}
+
+/** Everything an archetype needs to lay out the middle of a board. */
+interface BoardCtx {
+  baseY: number;
+  rng: () => number;
+  /** Alternating board side sign, for asymmetric layouts. */
+  ps: number;
+  overtime: boolean;
+  rails: RailSpec[];
+  bumpers: BumperSpec[];
+  dots: DotSpec[];
+  powerups: PowerUpSpec[];
+}
+
+/** A point at local (lx, ly), bent to follow the canyon centreline. */
+function P(c: BoardCtx, lx: number, ly: number): RailPoint {
+  const y = c.baseY + ly;
+  return { x: centreX(y) + lx, y };
+}
+
+/**
+ * String Extra Time Dots along a lane polyline at a fixed arc-length spacing,
+ * inset slightly toward the centreline so they sit ON the playable side of the
+ * rail — the PinOut "runway lights" read.
+ */
+function dotsAlong(points: RailPoint[], spacing: number, out: DotSpec[], inset = 1.15): void {
+  let next = spacing * 0.5;
+  let acc = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) continue;
+    while (next <= acc + len) {
+      const t = (next - acc) / len;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const toward = Math.sign(centreX(y) - x) || 1;
+      out.push({ x: x + toward * inset, y });
+      next += spacing;
+    }
+    acc += len;
+  }
+}
+
+// ------------------------------------------------------------ archetypes --- //
+
+/** The classic PinOut screen: mirrored ramps arcing into the neck, both dotted. */
+function twinRamps(c: BoardCtx): void {
+  for (const s of [-1, 1]) {
+    const ramp: RailPoint[] = [
+      P(c, s * 8.8, 13),
+      P(c, s * 9.2, 19),
+      P(c, s * 7.8, 26),
+      P(c, s * 4.6, 33),
+      P(c, s * NECK_X, TOP),
+    ];
+    c.rails.push({ kind: 'ramp', points: ramp });
+    if (!c.overtime) dotsAlong(ramp, 3.4, c.dots);
+  }
+  c.bumpers.push(P(c, c.ps * 3.4, 22));
+  if (!c.overtime) {
+    c.dots.push(P(c, 0, 15.5), P(c, -c.ps * 2.2, 27), P(c, 0, 34.5));
+  }
+}
+
+/** One grand dotted sweep up a single side; bumper pocket + plain lane opposite. */
+function orbit(c: BoardCtx): void {
+  const s = c.ps;
+  const main: RailPoint[] = [
+    P(c, s * 8.8, 11),
+    P(c, s * 9.2, 17),
+    P(c, s * 8.9, 25),
+    P(c, s * 5.6, 32.5),
+    P(c, s * NECK_X, TOP),
+  ];
+  c.rails.push({ kind: 'ramp', points: main });
+  if (!c.overtime) dotsAlong(main, 3.0, c.dots);
+
+  // The opposite wall carries a shorter, undotted deflector into the neck:
+  // the safe line. The long dotted orbit is the reward line.
+  const deflector: RailPoint[] = [
+    P(c, -s * 8.8, 16),
+    P(c, -s * 7.0, 27),
+    P(c, -s * NECK_X, TOP),
+  ];
+  c.rails.push({ kind: 'ramp', points: deflector });
+  c.bumpers.push(P(c, -s * 5.2, 14), P(c, -s * 3.2, 21));
+  if (!c.overtime) c.dots.push(P(c, 0, 30), P(c, s * 0.9, 35));
+}
+
+/** A diamond island splits the climb into two dotted lanes that re-merge. */
+function island(c: BoardCtx): void {
+  const iy = 24;
+  const diamond: RailPoint[] = [
+    P(c, 0, iy - 5.2),
+    P(c, 4.2, iy),
+    P(c, 0, iy + 5.2),
+    P(c, -4.2, iy),
+    P(c, 0, iy - 5.2),
+  ];
+  c.rails.push({ kind: 'wall', points: diamond });
+  for (const s of [-1, 1]) {
+    const lane: RailPoint[] = [
+      P(c, s * 8.8, 13),
+      P(c, s * 8.2, 22),
+      P(c, s * 6.6, 30),
+      P(c, s * NECK_X, TOP),
+    ];
+    c.rails.push({ kind: 'ramp', points: lane });
+    if (!c.overtime) dotsAlong(lane, 3.4, c.dots);
+  }
+  if (!c.overtime) c.dots.push(P(c, 0, 33.5));
+}
+
+/** A pop-bumper triangle mid-board with straighter side guides — the chaos board. */
+function nest(c: BoardCtx): void {
+  c.bumpers.push(P(c, -4.6, 19), P(c, 4.6, 19), P(c, 0, 26));
+  for (const s of [-1, 1]) {
+    const guide: RailPoint[] = [
+      P(c, s * 8.8, 13),
+      P(c, s * 8.4, 23),
+      P(c, s * 5.2, 32),
+      P(c, s * NECK_X, TOP),
+    ];
+    c.rails.push({ kind: 'ramp', points: guide });
+    if (!c.overtime) dotsAlong(guide, 4.2, c.dots);
+  }
+  if (!c.overtime) {
+    c.dots.push(P(c, -2.3, 22.5), P(c, 2.3, 22.5), P(c, 0, 31.5));
+  }
+}
+
+const ARCHETYPES = [twinRamps, orbit, island, nest] as const;
+
+// --------------------------------------------------------------- emitter --- //
 
 export function generateChunk(index: number): ChunkSpec {
   const baseY = index * H;
@@ -84,6 +233,9 @@ export function generateChunk(index: number): ChunkSpec {
   const dots: DotSpec[] = [];
   const powerups: PowerUpSpec[] = [];
   const flippers: FlipperSpec[] = [];
+
+  const ps = index % 2 === 0 ? 1 : -1;
+  const c: BoardCtx = { baseY, rng, ps, overtime, rails, bumpers, dots, powerups };
 
   // ---- Continuous winding side walls (lively — the ball ricochets off them). ----
   const samples = 8;
@@ -108,57 +260,21 @@ export function generateChunk(index: number): ChunkSpec {
   });
 
   // ---- Flipper "V" just above the gate, with a central drain between tips. ----
-  flippers.push({ centerX: 0, y: baseY + 5, gap: HALF * 1.05 });
+  flippers.push({ centerX: centreX(baseY + 5), y: baseY + 5, gap: HALF * 1.05 });
 
   // ---- Slingshots above-outboard of each flipper (kick a ball back into play). ----
-  rails.push({ kind: 'sling', points: [{ x: -9.0, y: baseY + 5.5 }, { x: -6.4, y: baseY + 10.5 }] });
-  rails.push({ kind: 'sling', points: [{ x: 9.0, y: baseY + 5.5 }, { x: 6.4, y: baseY + 10.5 }] });
+  rails.push({ kind: 'sling', points: [P(c, -8.8, 5.5), P(c, -6.2, 10.5)] });
+  rails.push({ kind: 'sling', points: [P(c, 8.8, 5.5), P(c, 6.2, 10.5)] });
 
-  // ---- The funnel: a wide, gently-necking V that LIFTS a shot to the gate. ----
-  // Shallow slopes so an ascending ball glances along a wall (and is carried up
-  // by the ramp lift) rather than slamming its underside and bouncing back. The
-  // mouth stays wide and open low down so a freshly-served ball rises into the
-  // throat instead of pinballing around the base, then it necks to just under
-  // the next gate. Never vertical — parallel walls a ball-width apart let the
-  // swept solver resolve to the wrong side and tunnel out.
-  const neckX = 1.9;
-  const funnelMouthY = baseY + 17;
-  const funnelNeckY = baseY + H - 2; // just below the next gate
-  const midY = (funnelMouthY + funnelNeckY) * 0.5;
-  rails.push({
-    kind: 'ramp',
-    points: [
-      { x: -8.6, y: funnelMouthY },
-      { x: -4.3, y: midY },
-      { x: -neckX, y: funnelNeckY },
-    ],
-  });
-  rails.push({
-    kind: 'ramp',
-    points: [
-      { x: 8.6, y: funnelMouthY },
-      { x: 4.3, y: midY },
-      { x: neckX, y: funnelNeckY },
-    ],
-  });
+  // ---- The shot geometry of the board's middle: one of the archetypes. ----
+  // Board 0 is always the classic twin-ramp screen (it teaches the game).
+  const archetype = index === 0 ? twinRamps : ARCHETYPES[Math.floor(rng() * ARCHETYPES.length)];
+  archetype(c);
 
-  // ---- Bumper pocket: off-centre, alternating side; adds chaos & dots. ----
-  const ps = index % 2 === 0 ? 1 : -1;
-  bumpers.push({ x: ps * 6.6, y: baseY + 22 });
-  bumpers.push({ x: ps * 5.0, y: baseY + 13 });
-
-  // ---- Dots: a column up the open centre (reward for the clean line). ----
-  if (!overtime) {
-    for (let dy = 14; dy <= H - 4; dy += 6) {
-      dots.push({ x: 0, y: baseY + dy });
-    }
-    dots.push({ x: ps * 6.0, y: baseY + 17 }); // a tempting one by the bumpers
-  }
-
-  // ---- Power-up orb (chance-based, tucked into the bumper-pocket corner). ----
+  // ---- Power-up orb (chance-based, tucked into a hard-to-reach corner). ----
   if (!overtime && rng() < biome.difficulty.powerupChance) {
-    const y = baseY + randRange(rng, H * 0.55, H * 0.78);
-    powerups.push({ x: -ps * (HALF - 3.2), y });
+    const ly = randRange(rng, H * 0.55, H * 0.78);
+    powerups.push(P(c, -ps * (HALF - 3.4), ly));
   }
 
   // ---- Checkpoint boundary (every 1000 distance). ----

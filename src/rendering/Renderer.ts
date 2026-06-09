@@ -8,6 +8,7 @@ import { Config } from '@/config/GameConfig';
 import { CameraRig } from './CameraRig';
 import { createMistPass } from './MistPass';
 import { GridFloor } from './GridFloor';
+import { CanyonWalls } from './CanyonWalls';
 
 /**
  * Owns the WebGL renderer, scene, and the multi-pass post-processing stack that
@@ -34,6 +35,7 @@ export class Renderer {
   private readonly mistPass: ShaderPass;
   private readonly fog: THREE.FogExp2;
   private readonly gridFloor = new GridFloor();
+  private readonly canyon = new CanyonWalls();
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -47,12 +49,14 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = Config.bloom.exposure;
 
-    this.fog = new THREE.FogExp2(0x05010f, 0.018);
+    this.fog = new THREE.FogExp2(0x05010f, 0.02);
     this.scene.fog = this.fog;
 
-    // Recline the whole gameplay plane into a steep canyon, then add it + floor.
+    // Recline the whole gameplay plane into a steep canyon, then add it,
+    // the grid floor, and the dark canyon massif flanking the lane.
     this.playfield.rotation.x = -Config.camera.tilt;
     this.playfield.add(this.gridFloor.mesh);
+    this.playfield.add(this.canyon.group);
     this.scene.add(this.playfield);
 
     // Subtle ambient + a key light so MeshStandardMaterial walls read as 3D.
@@ -82,10 +86,11 @@ export class Renderer {
     window.addEventListener('resize', this.onResize);
   }
 
-  /** Update fog + clear colour to match the active biome palette. */
+  /** Update fog + clear colour + canyon rock to match the active biome. */
   setBackground(color: number): void {
     this.fog.color.setHex(color);
     this.renderer.setClearColor(color, 1);
+    this.canyon.setPalette(color);
   }
 
   /** Tint the grid floor to the active biome accent. */
@@ -96,6 +101,7 @@ export class Renderer {
   render(dt: number): void {
     this.cameraRig.update(dt);
     this.gridFloor.follow(this.cameraRig.follow);
+    this.canyon.follow(this.cameraRig.follow);
     this.composer.render();
   }
 

@@ -57,7 +57,7 @@ export function railPhysics(kind: RailKind): RailPhysics {
       return { restitution: 0.62, friction: 0.02, kick: 0, kickUp: 0, oneWayY: 0, collisionRadius: 0.5 };
     case 'ramp':
       // Guide surface that LIFTS: slick, mildly bouncy, and gives a rising ball a
-      // gentle vertical boost on contact so a weak shot hugging the funnel is
+      // gentle vertical boost on contact so a weak shot hugging a lane is
       // carried up to the gate. A clean centre shot never touches it.
       return { restitution: 0.55, friction: 0.008, kick: 0, kickUp: 16, oneWayY: 0, collisionRadius: 0.42 };
     case 'sling':
@@ -75,9 +75,9 @@ export function railVisual(kind: RailKind): RailVisual {
     case 'rail':
       return { tubeRadius: 0.5, intensity: 1.6 };
     case 'ramp':
-      return { tubeRadius: 0.42, intensity: 1.4 };
+      return { tubeRadius: 0.42, intensity: 1.9 };
     case 'sling':
-      return { tubeRadius: 0.62, intensity: 2.1 };
+      return { tubeRadius: 0.62, intensity: 2.3 };
     case 'gate':
       return { tubeRadius: 0.28, intensity: 1.0 };
   }

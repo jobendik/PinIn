@@ -7,7 +7,7 @@ import { BumperEntity } from '@/entities/BumperEntity';
 import { DotEntity } from '@/entities/DotEntity';
 import { PowerUpEntity } from '@/entities/PowerUpEntity';
 import { FlipperPair } from '@/entities/FlipperPair';
-import { generateChunk, type ChunkSpec } from './ChunkGenerator';
+import { generateChunk, type ChunkSpec, type RailSpec } from './ChunkGenerator';
 
 interface ActiveChunk {
   spec: ChunkSpec;
@@ -89,6 +89,22 @@ export class LevelStreamer {
     }
   }
 
+  /**
+   * PinOut colour language: boundary walls carry the biome's primary accent,
+   * shot lanes/ramps the secondary, slingshots flash white-hot, and the gate
+   * stays a dim accent strip — so each element class reads at a glance.
+   */
+  private railColor(rail: RailSpec, spec: ChunkSpec): number {
+    switch (rail.kind) {
+      case 'ramp':
+        return spec.biome.accentB;
+      case 'sling':
+        return 0xffffff;
+      default:
+        return spec.biome.accent;
+    }
+  }
+
   private instantiateChunk(index: number): void {
     const spec = generateChunk(index);
     const chunk: ActiveChunk = { spec, rails: [], bumpers: [], dots: [], powerups: [], flippers: [] };
@@ -96,7 +112,7 @@ export class LevelStreamer {
     for (const r of spec.rails) {
       const rail = this.railPool.acquire();
       if (!rail) break;
-      rail.configure(r.points, r.kind, spec.biome.accent);
+      rail.configure(r.points, r.kind, this.railColor(r, spec));
       chunk.rails.push(rail);
     }
     for (const b of spec.bumpers) {
