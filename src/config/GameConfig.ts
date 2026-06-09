@@ -31,15 +31,15 @@ export const Config = {
    * effectively infinite flipper mass so the ball never deflects the stroke.
    */
   flipper: {
-    length: 4.8, // ~1/4 of the lane width, like a real table — short enough that
+    length: 3.9, // short side-mounted bats keep the centre channel passable
     // the tips leave an open central gap instead of sealing the channel
-    width: 1.0,
+    width: 0.72,
     restitution: 0.9,
     friction: 0.9,
-    restAngleDeg: -32, // resting (down) angle relative to mount, for the LEFT flipper
-    upAngleDeg: 38, // actuated (up) angle relative to mount
+    restAngleDeg: -24, // resting (down) angle relative to mount, for the LEFT flipper
+    upAngleDeg: 48, // actuated (up) angle relative to mount
     angularSpeed: 46, // rad/s — near-instant snap (low coil ramp-up)
-    tipBoost: 30, // extra impulse imparted to the ball at the flipper tip
+    tipBoost: 34, // extra impulse imparted to the ball at the flipper tip
   },
 
   /** The temporal economy — time is the only currency (blueprint §Temporal Economy). */
@@ -91,17 +91,17 @@ export const Config = {
   },
 
   level: {
-    chunkHeight: 46, // world-units per chunk (also the spacing between flipper pairs)
+    chunkHeight: 54, // world-units per chunk (also the spacing between flipper pairs)
     spawnAheadChunks: 3, // keep this many chunks generated above the ball
     recycleBehind: 75, // recycle pooled entities this far below the camera
-    laneWidth: 22, // playfield horizontal span (X)
+    laneWidth: 24, // playfield horizontal span (X)
   },
 
   /** Object-pool capacities, pre-allocated on load to avoid GC spikes mid-run. */
   pools: {
     dots: 400,
-    rails: 80, // curved tube rails (4-5 per active board)
-    bumpers: 48, // pop bumpers
+    rails: 128, // curved tube rails (ramps, return lanes, side walls)
+    bumpers: 72, // pop bumpers
     powerups: 24,
     particles: 256,
   },

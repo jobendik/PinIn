@@ -63,6 +63,10 @@ export class GridFloor {
           vec2 lines = grid / max(fw, 1e-5);
           float gridLine = 1.0 - min(min(lines.x, lines.y), 1.0);
 
+          // --- Pinball table lane paint: side stripes and centre runway. ---
+          float sideStripe = 1.0 - smoothstep(0.0, fwidth(abs(vGX)) * 4.0 + 0.08, abs(abs(vGX) - 8.8));
+          float centreLane = 1.0 - smoothstep(0.0, fwidth(abs(vGX)) * 5.0 + 0.05, abs(abs(vGX) - 2.6));
+
           // --- Up-pointing chevron arrows scrolling down the centre lane. ---
           float v = (vGY + abs(vGX) * 1.3) / 9.0;
           float cb = abs(fract(v) - 0.5);
@@ -70,7 +74,7 @@ export class GridFloor {
           chev *= smoothstep(6.5, 3.5, abs(vGX)); // centre lane width
           chev *= step(0.5, abs(vGX));            // hollow centre line
 
-          float intensity = (gridLine * 0.65 + chev * 0.9) * vEdge;
+          float intensity = (gridLine * 0.55 + chev * 0.9 + sideStripe * 0.65 + centreLane * 0.35) * vEdge;
           // A faint filled surface so the floor reads as solid, not void.
           vec3 col = uAccent * intensity + uAccent * 0.06 * vEdge;
           float alpha = intensity * 0.8 + 0.06 * vEdge;
