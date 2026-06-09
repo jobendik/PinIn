@@ -5,7 +5,13 @@ import { BallTrail } from '@/rendering/BallTrail';
 import { neonMaterial, glowMaterial } from '@/rendering/materials';
 import { lerp } from '@/math/MathUtils';
 
-/** Visual representation of the pinball: a glowing sphere plus a ribbon trail. */
+/**
+ * Visual representation of the pinball.
+ *
+ * PinOut's ball reads as a white-hot point of light streaking through the
+ * canyon, with the *biome* colour living in its halo and ribbon trail — so the
+ * core stays a constant white-hot sphere and only the glow/trail are tinted.
+ */
 export class BallEntity {
   /** Visual Z height above the floor so the ball reads as resting on it. */
   private static readonly Z = Config.ball.radius;
@@ -17,11 +23,11 @@ export class BallEntity {
   constructor(scene: THREE.Object3D, color: number) {
     this.mesh = new THREE.Mesh(
       new THREE.SphereGeometry(Config.ball.radius, 24, 24),
-      neonMaterial(color, 1.4),
+      neonMaterial(0xffffff, 2.0),
     );
     this.glow = new THREE.Mesh(
-      new THREE.SphereGeometry(Config.ball.radius * 1.5, 16, 16),
-      glowMaterial(color, 0.16),
+      new THREE.SphereGeometry(Config.ball.radius * 1.7, 16, 16),
+      glowMaterial(color, 0.22),
     );
     this.group.add(this.mesh, this.glow);
     this.group.renderOrder = 3;
@@ -32,7 +38,6 @@ export class BallEntity {
   }
 
   setColor(color: number): void {
-    this.mesh.material = neonMaterial(color, 1.4);
     (this.glow.material as THREE.MeshBasicMaterial).color.setHex(color);
     this.trail.setColor(color);
   }

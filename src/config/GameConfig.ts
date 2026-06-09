@@ -10,7 +10,7 @@ export const Config = {
   physics: {
     fixedDt: 1 / 120, // 120 Hz solver for crisp, deterministic ballistics
     maxSubSteps: 8, // cap catch-up iterations to avoid the "spiral of death"
-    gravity: 28, // world units / s^2, pulling toward -Y (down the canyon)
+    gravity: 31, // world units / s^2, pulling toward -Y (down the canyon)
     velocityIterations: 12, // blueprint recommends 10–15
     positionIterations: 4,
     ccdMinTravel: 0.35, // swept collision kicks in when travel exceeds ball radius * this
@@ -22,7 +22,7 @@ export const Config = {
     restitution: 0.55, // walls/ramps have their own per-kind values (railProps)
     friction: 0.04, // low rolling friction so momentum carries up ramps
     maxSpeed: 108, // hard clamp to keep CCD reliable (swept, so this is safe)
-    trailLength: 28,
+    trailLength: 40,
   },
 
   /**
@@ -38,12 +38,12 @@ export const Config = {
     friction: 0.9,
     restAngleDeg: -32, // resting (down) angle relative to mount, for the LEFT flipper
     upAngleDeg: 38, // actuated (up) angle relative to mount
-    angularSpeed: 24, // rad/s — snappy but with a catchable upswing window (~50ms)
+    angularSpeed: 27, // rad/s — snappy but with a catchable upswing window
     tipBoost: 30, // extra impulse a flipper swinging into the ball imparts — authoritative shots
   },
 
   /**
-   * The launcher is now a pinball PLUNGER, not a free elevator. It only re-serves
+   * The launcher is a pinball PLUNGER, not a free elevator. It only re-serves
    * a ball that has drained to the bottom of a board: a firm-but-finite kick that
    * puts the ball back into play among the bumpers. Climbing a board to its gate
    * is the flippers' job — a plunge alone never clears one. (See Game.ts.)
@@ -74,23 +74,27 @@ export const Config = {
 
   /**
    * Forced-perspective camera up an INCLINED playfield (blueprint §Rendering /
-   * pinout.md).
+   * pinout.md). Lower + closer than a top-down table view: the PinOut read is a
+   * 3/4 chase shot that compresses the canyon ahead into glowing depth.
    */
   camera: {
     followLambda: 4.5,
     tilt: 0.66,
-    height: 12,
-    back: 17,
-    lookAhead: 24,
-    fov: 64,
+    height: 11,
+    back: 15,
+    lookAhead: 26,
+    fov: 58,
   },
 
-  /** Selective-bloom configuration for the neon synthwave look. */
+  /**
+   * Selective-bloom configuration for the neon synthwave look. Threshold keeps
+   * the dark canyon crisp; strength is what makes the rails *burn*.
+   */
   bloom: {
-    threshold: 0.9,
-    strength: 0.55,
-    radius: 0.32,
-    exposure: 1.0,
+    threshold: 0.82,
+    strength: 0.95,
+    radius: 0.45,
+    exposure: 1.05,
   },
 
   level: {
@@ -103,8 +107,8 @@ export const Config = {
   /** Object-pool capacities, pre-allocated on load to avoid GC spikes mid-run. */
   pools: {
     dots: 400,
-    rails: 120, // walls + ramps + slingshots + gate per board (~7 each)
-    bumpers: 64, // pop-bumper clusters (3 per board)
+    rails: 120, // walls + ramps + slingshots + gate per board (~9 each)
+    bumpers: 64, // pop-bumper clusters (up to 3 per board)
     powerups: 24,
     particles: 256,
   },
