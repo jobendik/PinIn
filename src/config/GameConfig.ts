@@ -19,7 +19,7 @@ export const Config = {
   ball: {
     radius: 0.9,
     mass: 1,
-    restitution: 0.55, // walls/ramps; flipper has its own (below)
+    restitution: 0.55, // walls/ramps have their own per-kind values (railProps)
     friction: 0.04, // low rolling friction so momentum carries up ramps
     maxSpeed: 108, // hard clamp to keep CCD reliable (swept, so this is safe)
     trailLength: 28,
@@ -31,14 +31,28 @@ export const Config = {
    * effectively infinite flipper mass so the ball never deflects the stroke.
    */
   flipper: {
-    length: 3.9, // ~16% of the 24u lane; side-mounted pivots leave an open central gap
-    width: 0.72,
+    length: 4.8, // ~1/4 of the lane width, like a real table — short enough that
+    // the tips leave an open central drain instead of sealing the channel
+    width: 1.0,
     restitution: 0.9,
     friction: 0.9,
-    restAngleDeg: -24, // resting (down) angle relative to mount, for the LEFT flipper
-    upAngleDeg: 48, // actuated (up) angle relative to mount
-    angularSpeed: 46, // rad/s — near-instant snap (low coil ramp-up)
-    tipBoost: 34, // extra impulse imparted to the ball at the flipper tip
+    restAngleDeg: -32, // resting (down) angle relative to mount, for the LEFT flipper
+    upAngleDeg: 38, // actuated (up) angle relative to mount
+    angularSpeed: 24, // rad/s — snappy but with a catchable upswing window (~50ms)
+    tipBoost: 30, // extra impulse a flipper swinging into the ball imparts — authoritative shots
+  },
+
+  /**
+   * The launcher is now a pinball PLUNGER, not a free elevator. It only re-serves
+   * a ball that has drained to the bottom of a board: a firm-but-finite kick that
+   * puts the ball back into play among the bumpers. Climbing a board to its gate
+   * is the flippers' job — a plunge alone never clears one. (See Game.ts.)
+   */
+  launch: {
+    plungeSpeed: 36, // u/s re-serve kick — reaches ~half a board, never clears one
+    aimX: 9, // lateral component, biased toward the side opposite the tap
+    captureSpeed: 7, // u/s — below this the ball counts as "settled"
+    captureDelay: 0.3, // s of settling before the plunger re-arms
   },
 
   /** The temporal economy — time is the only currency (blueprint §Temporal Economy). */
@@ -59,29 +73,18 @@ export const Config = {
 
   /**
    * Forced-perspective camera up an INCLINED playfield (blueprint §Rendering /
-   * pinout.md). Gameplay is 2D on the X/Y plane; rendering tilts that plane back
-   * so the canyon recedes into the distance as you climb. The camera sits above
-   * the surface (along its normal) and behind the ball (down the incline),
-   * looking up-canyon — the classic PinOut 3/4 ascending view.
+   * pinout.md).
    */
   camera: {
-    followLambda: 4.5, // exponential damping rate for the Y follow
-    tilt: 0.66, // radians the playfield reclines away from facing the camera
-    height: 12, // camera offset above the playfield surface (along its normal)
-    back: 17, // camera offset behind the ball, down the incline
-    lookAhead: 24, // look target distance up the incline from the ball
+    followLambda: 4.5,
+    tilt: 0.66,
+    height: 12,
+    back: 17,
+    lookAhead: 24,
     fov: 64,
   },
 
-  /**
-   * Selective-bloom configuration for the neon synthwave look (blueprint §Rendering).
-   *
-   * The bloom pass runs on the LINEAR HDR render (before the ACES output
-   * tone-map), so the threshold is compared against raw emissive luminance.
-   * Neon materials emit ~1.2–1.6, walls ~0.25 — a threshold of 0.9 lets only the
-   * bright cores blossom while the dark canyon stays crisp. A small radius keeps
-   * the glow tight instead of smearing the whole frame to white.
-   */
+  /** Selective-bloom configuration for the neon synthwave look. */
   bloom: {
     threshold: 0.9,
     strength: 0.55,
@@ -90,17 +93,17 @@ export const Config = {
   },
 
   level: {
-    chunkHeight: 54, // world-units per chunk (also the spacing between flipper pairs)
-    spawnAheadChunks: 3, // keep this many chunks generated above the ball
-    recycleBehind: 75, // recycle pooled entities this far below the camera
-    laneWidth: 24, // playfield horizontal span (X)
+    chunkHeight: 40, // world-units per board: short enough that a clean flip can clear it
+    spawnAheadChunks: 3, // keep this many boards generated above the ball
+    recycleBehind: 90, // recycle pooled entities this far below the camera
+    laneWidth: 22, // playfield horizontal span (X)
   },
 
   /** Object-pool capacities, pre-allocated on load to avoid GC spikes mid-run. */
   pools: {
     dots: 400,
-    rails: 128, // curved tube rails (ramps, return lanes, side walls)
-    bumpers: 72, // pop bumpers
+    rails: 120, // walls + ramps + slingshots + gate per board (~7 each)
+    bumpers: 64, // pop-bumper clusters (3 per board)
     powerups: 24,
     particles: 256,
   },
