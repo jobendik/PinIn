@@ -3,14 +3,7 @@ import type { Poolable } from '@/core/ObjectPool';
 import { Segment } from '@/physics/Segment';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { neonMaterial } from '@/rendering/materials';
-
-export type RailKind = 'rail' | 'ramp' | 'wall';
-
-/** A point on a rail polyline (gameplay X/Y plane). */
-export interface RailPoint {
-  x: number;
-  y: number;
-}
+import { railPhysics, railVisual, type RailKind, type RailPoint } from '@/level/railProps';
 
 const MAX_POINTS = 24;
 const TUBE_Z = 1.3; // height of the glowing pipe above the floor
@@ -46,22 +39,23 @@ export class RailEntity implements Poolable {
     const n = Math.min(points.length, MAX_POINTS);
     if (n < 2) return;
 
-    this.tubeRadius = kind === 'ramp' ? 0.32 : kind === 'wall' ? 0.5 : 0.42;
-    const collisionR = this.tubeRadius;
-    // Low bounce: rails should GUIDE the ball along/up the channel, not ricochet
-    // it back down. The ball glances off and keeps its upward momentum.
-    const restitution = kind === 'ramp' ? 0.5 : 0.4;
-    const friction = kind === 'ramp' ? 0.01 : 0.02;
+    const phys = railPhysics(kind);
+    const vis = railVisual(kind);
+    this.tubeRadius = vis.tubeRadius;
 
     // --- Collider chain along the polyline. ---
     this.activeSegments = n - 1;
     for (let i = 0; i < n - 1; i++) {
       const seg = this.segments[i];
       seg.set(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
-      seg.radius = collisionR;
-      seg.restitution = restitution;
-      seg.friction = friction;
-      seg.kind = kind === 'ramp' ? 'ramp' : 'wall';
+      seg.radius      = phys.collisionRadius;
+      seg.restitution = phys.restitution;
+      seg.friction    = phys.friction;
+      seg.kick        = phys.kick;
+      seg.kickUp      = phys.kickUp;
+      seg.oneWayY     = phys.oneWayY;
+      // The renderer treats 'rail' and 'wall' identically; map to the shared tag.
+      seg.kind        = kind === 'rail' ? 'wall' : kind;
       seg.active = true;
       this.world.addSegment(seg);
     }
@@ -79,7 +73,7 @@ export class RailEntity implements Poolable {
 
     this.mesh.geometry.dispose();
     this.mesh.geometry = geo;
-    this.mesh.material = neonMaterial(accent, kind === 'ramp' ? 2.0 : 1.6);
+    this.mesh.material = neonMaterial(accent, vis.intensity);
     this.mesh.visible = true;
   }
 

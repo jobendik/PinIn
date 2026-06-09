@@ -49,10 +49,11 @@ export const Config = {
    * is the flippers' job — a plunge alone never clears one. (See Game.ts.)
    */
   launch: {
-    plungeSpeed: 36, // u/s re-serve kick — reaches ~half a board, never clears one
-    aimX: 9, // lateral component, biased toward the side opposite the tap
-    captureSpeed: 7, // u/s — below this the ball counts as "settled"
+    plungeSpeed: 36,   // u/s re-serve kick — reaches ~half a board, never clears one
+    aimX: 9,           // lateral component, biased toward the side opposite the tap
+    captureSpeed: 7,   // u/s — below this the ball counts as "settled"
     captureDelay: 0.3, // s of settling before the plunger re-arms
+    captureMaxLocalY: 12, // ball must be this far (world-units) up its board to count as "low"
   },
 
   /** The temporal economy — time is the only currency (blueprint §Temporal Economy). */

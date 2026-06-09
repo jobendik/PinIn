@@ -23,18 +23,6 @@ const SPAWN = { x: 1.5, y: 8 };
 const PUSH_IMPULSE = 34;
 
 /**
- * Tap-to-launch kicker. Whenever the ball settles (speed below CAPTURE_SPEED
- * for CAPTURE_DELAY seconds) the launcher arms and the next tap fires the ball
- * up the canyon with a strong, reliable impulse — so a run never stalls waiting
- * for a lucky flip. In flight, taps drive the flippers as normal. A left/right
- * tap angles the launch toward the opposite side for a little aiming control.
- */
-const CAPTURE_SPEED = 7; // u/s — below this the ball counts as "settling"
-const CAPTURE_DELAY = 0.3; // s of settling before the launcher arms
-const LAUNCH_SPEED = 74; // u/s upward kick — clears ~1.5 chunks against gravity
-const LAUNCH_AIM_X = 14; // lateral component, toward the side opposite the tap
-
-/**
  * The top-level orchestrator. Owns every subsystem, the fixed-timestep loop,
  * and the Menu → Playing → GameOver state machine. Subsystems communicate via
  * the EventBus; the Game only wires their lifecycles and the few cross-cutting
@@ -181,12 +169,15 @@ export class Game {
     if (this.economy.isOver) this.endRun();
   }
 
-  /** Arm the launcher once the ball has settled, so the next tap relaunches it. */
+  /** Arm the plunger once the ball has settled low in a board, so the next tap re-serves it. */
   private updateLauncher(dt: number): void {
     if (this.launchArmed) return;
-    if (this.world.ball.velocity.lengthSq() < CAPTURE_SPEED * CAPTURE_SPEED) {
+    const { captureSpeed, captureDelay, captureMaxLocalY } = Config.launch;
+    const ball = this.world.ball;
+    const localY = ball.position.y % Config.level.chunkHeight;
+    if (ball.velocity.length() < captureSpeed && localY < captureMaxLocalY) {
       this.captureTimer += dt;
-      if (this.captureTimer >= CAPTURE_DELAY) {
+      if (this.captureTimer >= captureDelay) {
         this.launchArmed = true;
         this.hud.setHint('Tap to launch');
       }
@@ -197,9 +188,10 @@ export class Game {
 
   private launch(side: 'left' | 'right'): void {
     const ball = this.world.ball;
+    const { plungeSpeed, aimX } = Config.launch;
     // Aim toward the side opposite the tap for a touch of directional control.
-    const aimX = side === 'left' ? LAUNCH_AIM_X : -LAUNCH_AIM_X;
-    ball.velocity.set(aimX, LAUNCH_SPEED);
+    const sideX = side === 'left' ? aimX : -aimX;
+    ball.velocity.set(sideX, plungeSpeed);
     ball.clampSpeed();
     this.world.resetNudge();
     this.launchArmed = false;
