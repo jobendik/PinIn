@@ -31,8 +31,8 @@ export const Config = {
    * effectively infinite flipper mass so the ball never deflects the stroke.
    */
   flipper: {
-    length: 3.9, // short side-mounted bats keep the centre channel passable
-    // the tips leave an open central gap instead of sealing the channel
+    length: 3.9, // ~16% of the 24u lane; short enough for a broad centre pass-through
+    // the side-mounted pivots leave an open central gap instead of sealing the channel
     width: 0.72,
     restitution: 0.9,
     friction: 0.9,

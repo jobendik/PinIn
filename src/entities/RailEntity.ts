@@ -51,7 +51,7 @@ export class RailEntity implements Poolable {
     // Low bounce: rails should GUIDE the ball along/up the channel, not ricochet
     // it back down. The ball glances off and keeps its upward momentum.
     const restitution = kind === 'ramp' ? 0.5 : 0.4;
-    const friction = kind === 'ramp' ? 0.0 : 0.02;
+    const friction = kind === 'ramp' ? 0.01 : 0.02;
 
     // --- Collider chain along the polyline. ---
     this.activeSegments = n - 1;

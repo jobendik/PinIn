@@ -30,6 +30,7 @@ export class GridFloor {
         uAccent: { value: new THREE.Color(0x14e0ff) },
         uSpacing: { value: 7.5 },
         uHalfLen: { value: this.halfLen },
+        uHalfWidth: { value: Config.level.laneWidth * 0.5 },
       },
       vertexShader: /* glsl */ `
         varying float vGX;
@@ -55,6 +56,7 @@ export class GridFloor {
         varying float vEdge;
         uniform vec3 uAccent;
         uniform float uSpacing;
+         uniform float uHalfWidth;
         void main() {
           // --- Grid lines. ---
           vec2 g = vec2(vGX, vGY) / uSpacing;
@@ -64,8 +66,8 @@ export class GridFloor {
           float gridLine = 1.0 - min(min(lines.x, lines.y), 1.0);
 
           // --- Pinball table lane paint: side stripes and centre runway. ---
-          const float SIDE_STRIPE_X = 8.8;    // near the inlanes / side walls
-          const float CENTRE_STRIPE_X = 2.6;  // narrow runway around the climb lane
+          float SIDE_STRIPE_X = uHalfWidth * 0.73;    // near the inlanes / side walls
+          float CENTRE_STRIPE_X = uHalfWidth * 0.22;  // narrow runway around the climb lane
           float sideStripe = 1.0 - smoothstep(0.0, fwidth(abs(vGX)) * 4.0 + 0.08, abs(abs(vGX) - SIDE_STRIPE_X));
           float centreStripe = 1.0 - smoothstep(0.0, fwidth(abs(vGX)) * 5.0 + 0.05, abs(abs(vGX) - CENTRE_STRIPE_X));
 

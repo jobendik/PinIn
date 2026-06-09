@@ -53,7 +53,7 @@ const H = Config.level.chunkHeight;
 const HALF = Config.level.laneWidth * 0.5;
 const SEED = 0x9e3779b1;
 const FLIPPER_Y_OFFSET = 7.5; // low in the board so missed balls roll back onto the bats
-const FLIPPER_GAP_RATIO = 1.52; // wide side-mounted pivots keep the centre climb lane open
+const FLIPPER_GAP_HALF_WIDTH_MULTIPLIER = 1.52; // gap = HALF * multiplier for side pivots
 
 /**
  * Continuous canyon edge — a smooth function of *absolute* Y so adjacent boards'
@@ -102,7 +102,7 @@ export function generateChunk(index: number): ChunkSpec {
   // The pivots sit close to the side walls, leaving a broad centre lane for a
   // climbing ball to pass through instead of becoming trapped under the bats.
   const flipperY = baseY + FLIPPER_Y_OFFSET;
-  const flipperGap = HALF * FLIPPER_GAP_RATIO;
+  const flipperGap = HALF * FLIPPER_GAP_HALF_WIDTH_MULTIPLIER;
   flippers.push({ centerX: 0, y: flipperY, gap: flipperGap });
 
   // First board: a full-width floor rail so the ball can't fall out the bottom.
@@ -155,7 +155,7 @@ export function generateChunk(index: number): ChunkSpec {
   // boards read like pinball tables while preserving a clear central escape lane.
   if (!overtime) {
     const clusterSide = rng() < 0.5 ? -1 : 1;
-    const clusterY = baseY + randRange(rng, H * 0.48, H * 0.68);
+    const clusterY = baseY + randRange(rng, H * 0.74, H * 0.84);
     const clusterX = clusterSide * randRange(rng, HALF * 0.42, HALF * 0.58);
     const bumperCount = randInt(rng, 2, 3);
     const bumperOffsets =
